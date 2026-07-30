@@ -90,6 +90,7 @@ router.post('/deploy', requireUser, async (req, res) => {
     return res.status(502).json({ error: `cloud provider error: ${err.message || err}` });
   }
 
+  console.log(`deployed ${instanceName} in ${region} for ${req.user.email}`);
   res.json({ ok: true, instanceId });
 });
 

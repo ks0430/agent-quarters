@@ -66,6 +66,15 @@ async function writeAgentFiles(name, configToml, env) {
 }
 
 async function startContainer(name, dir) {
+  // The agent image builds in the background during bootstrap; wait for it
+  // (up to 20 min) so early create-agent commands don't fail on new hosts.
+  for (let i = 0; i < 240; i++) {
+    const img = await run('docker', ['image', 'inspect', 'agent-base']);
+    if (img.ok) break;
+    if (i === 239) throw new Error('agent-base image not ready after 20 min - check /var/log/agentdeploy-bootstrap.log');
+    if (i % 12 === 0) console.log('waiting for agent-base image build...');
+    await sleep(5000);
+  }
   await run('docker', ['rm', '-f', containerOf(name)]); // idempotent
   const r = await run('docker', ['run', '-d',
     '--name', containerOf(name),

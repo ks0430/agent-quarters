@@ -27,9 +27,6 @@ mkdir -p /opt/agentdeploy /opt/agents
 curl -fsSL "${baseUrl}/dist/host-agent.js" -o /opt/agentdeploy/host-agent.js
 curl -fsSL "${baseUrl}/dist/Dockerfile" -o /opt/agentdeploy/Dockerfile
 
-# Prebuild the agent image so agent creation is fast later
-docker build -t agent-base /opt/agentdeploy
-
 cat > /etc/systemd/system/agentdeploy-host.service <<'UNIT'
 [Unit]
 Description=AgentDeploy host agent
@@ -58,8 +55,13 @@ chmod 600 /opt/agentdeploy/host.env
 mkdir -p /etc/systemd/system/docker.service.d
 printf '[Service]\\nOOMScoreAdjust=-500\\n' > /etc/systemd/system/docker.service.d/oom.conf
 
+# Register with the control plane FIRST so the dashboard shows progress,
+# then build the agent image (5-15 min on small instances). The host-agent
+# waits for the image before starting any agent container.
 systemctl daemon-reload
 systemctl enable --now agentdeploy-host
+
+docker build -t agent-base /opt/agentdeploy
 
 echo "=== bootstrap done ==="
 `;

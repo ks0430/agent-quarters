@@ -21,6 +21,7 @@ router.use(hostAuth);
 
 // First call after bootstrap: instance is fully set up and polling.
 router.post('/register', (req, res) => {
+  console.log(`host registered: ${req.instance.name} (instance ${req.instance.id})`);
   db.prepare("UPDATE instances SET state = 'ready' WHERE id = ?").run(req.instance.id);
   res.json({ ok: true, pollSeconds: 5, statusSeconds: 15 });
 });

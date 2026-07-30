@@ -36,7 +36,8 @@ const lightsail = {
       blueprintId: BLUEPRINT,
       bundleId,
       userData,
-      tags: [{ key: 'managed-by', value: 'agentdeploy' }],
+      // No tags: instances are identified by the ad- name prefix instead,
+      // which keeps the required IAM policy to the bare minimum.
     }));
   },
 

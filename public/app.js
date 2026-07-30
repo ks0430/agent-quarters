@@ -94,7 +94,9 @@ function statusPill(inst, agent) {
   if (inst.state === 'error') return mk('bad', 'Server error');
   if (!agent) return mk('warn', 'Ready — set up your agent');
   if (agent.status === 'pending') return mk('busy', 'Starting agent…');
-  if (agent.status === 'running' && needsLogin(agent)) return mk('warn', 'Ready — login to Claude');
+  if (agent.status === 'running' && needsLogin(agent)) {
+    return mk('warn', `Ready — login to ${agent.agent_type === 'codex' ? 'ChatGPT' : 'Claude'}`);
+  }
   if (agent.status === 'running' && agent.platform === 'none') return mk('warn', 'Ready — connect a platform');
   if (agent.status === 'running') return mk('live', 'Live');
   if (agent.status === 'stopped') return mk('bad', 'Stopped');
@@ -130,7 +132,8 @@ async function refresh() {
         ${!agent && inst.state !== 'error' ? `
           <button class="btn primary" data-act="setup" data-id="${inst.id}">Set up agent</button>` : ''}
         ${agent && needsLogin(agent) && agent.status === 'running' ? `
-          <button class="btn primary" data-act="login" data-id="${agent.id}">Login to Claude</button>` : ''}
+          <button class="btn primary" data-act="login" data-id="${agent.id}">
+            Login to ${agent.agent_type === 'codex' ? 'ChatGPT' : 'Claude'}</button>` : ''}
         ${agent ? `
           <button class="btn" data-act="edit" data-id="${agent.id}" data-platform="${agent.platform}"
             data-model="${agent.model || ''}" data-type="${agent.agent_type}">${connectLabel}</button>
@@ -239,8 +242,13 @@ function setupType() {
 function syncSetupFields() {
   const type = setupType();
   const isClaude = type === 'claudecode';
-  $('s-auth-wrap').classList.toggle('hidden', !isClaude); // codex = api-key only
-  const auth = isClaude ? $('s-auth').value : 'api-key';
+  const auth = $('s-auth').value;
+  $('s-auth').options[0].text = isClaude
+    ? 'Claude subscription — guided login, no API key (recommended)'
+    : 'ChatGPT subscription — guided device login (recommended)';
+  $('s-auth-hint').textContent = !isClaude && auth === 'subscription'
+    ? 'Requires "Device code login" enabled in your ChatGPT security settings.'
+    : '';
   $('s-apikey-wrap').classList.toggle('hidden', auth === 'subscription');
   $('s-apikey').required = auth !== 'subscription';
   $('s-apikey-hint').textContent = type === 'codex'
@@ -267,7 +275,7 @@ $('setup-form').onsubmit = async (e) => {
     await api('POST', `/instances/${$('s-instance-id').value}/agent`, {
       name: $('s-name').value.trim(),
       agentType: setupType(),
-      authMethod: setupType() === 'claudecode' ? $('s-auth').value : 'api-key',
+      authMethod: $('s-auth').value,
       apiKey: $('s-apikey').value.trim(),
       model: $('s-model').value.trim() || null,
       mode: $('s-mode').value,
@@ -362,6 +370,13 @@ $('l-start').onclick = async () => {
     await api('POST', `/agents/${id}/login/start`);
     pollLogin(id, 'awaiting_code', (r) => {
       $('l-url').href = r.url;
+      const isDeviceAuth = !!r.code; // codex: show code, completes on its own
+      $('l-codex-part').classList.toggle('hidden', !isDeviceAuth);
+      $('l-claude-part').classList.toggle('hidden', isDeviceAuth);
+      if (isDeviceAuth) {
+        $('l-code-display').textContent = r.code;
+        pollLogin(id, 'logged_in', () => { loginStep('done'); refresh(); }, 300);
+      }
       loginStep('code');
     });
   } catch (err) {

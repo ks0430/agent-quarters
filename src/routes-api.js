@@ -115,7 +115,6 @@ router.post('/instances/:id/agent', requireUser, (req, res) => {
     platform: req.body.platform || 'none',
     platformConfig: req.body.platformConfig || {},
   };
-  if (spec.agentType === 'codex') spec.authMethod = 'api-key';
   const errors = validateAgentSpec(spec);
   if (errors.length) return res.status(400).json({ error: errors.join('; ') });
 
@@ -200,9 +199,9 @@ router.post('/agents/:id/login/start', requireUser, (req, res) => {
   if (agent.auth_method !== 'subscription') {
     return res.status(400).json({ error: 'agent does not use subscription login' });
   }
-  db.prepare("UPDATE agents SET login_state = 'starting', login_url = NULL WHERE id = ?").run(agent.id);
+  db.prepare("UPDATE agents SET login_state = 'starting', login_url = NULL, login_code = NULL WHERE id = ?").run(agent.id);
   db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
-    .run(agent.iid, 'start-login', JSON.stringify({ agentName: agent.name }));
+    .run(agent.iid, 'start-login', JSON.stringify({ agentName: agent.name, agentType: agent.agent_type }));
   res.json({ ok: true });
 });
 
@@ -221,7 +220,7 @@ router.post('/agents/:id/login/code', requireUser, (req, res) => {
 router.get('/agents/:id/login', requireUser, (req, res) => {
   const agent = ownedAgent(req, res);
   if (!agent) return;
-  res.json({ state: agent.login_state, url: agent.login_url });
+  res.json({ state: agent.login_state, url: agent.login_url, code: agent.login_code, agentType: agent.agent_type });
 });
 
 router.post('/agents/:id/restart', requireUser, (req, res) => {

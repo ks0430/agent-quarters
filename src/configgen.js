@@ -82,8 +82,6 @@ export function validateAgentSpec(spec) {
   if (!AGENT_TYPES.includes(spec.agentType)) errors.push('invalid agent type');
   if (!['api-key', 'subscription'].includes(spec.authMethod || 'api-key'))
     errors.push('invalid auth method');
-  if (spec.authMethod === 'subscription' && spec.agentType !== 'claudecode')
-    errors.push('subscription login is only available for Claude Code');
   if (spec.authMethod !== 'subscription' && (!spec.apiKey || spec.apiKey.length < 8))
     errors.push('API key required');
   const platform = spec.platform || 'none';

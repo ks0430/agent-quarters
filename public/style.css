@@ -59,6 +59,12 @@ legend { color: var(--muted); font-size: 13px; padding: 0 6px; }
 .choice:has(input:checked) { border-color: var(--accent); background: var(--panel2); }
 .choice input { width: auto; margin: 0; }
 details { margin-top: 14px; }
+.code-display {
+  font: 700 26px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center; letter-spacing: 2px; color: var(--accent);
+  background: var(--bg); border: 1px dashed var(--border); border-radius: 10px;
+  padding: 10px; user-select: all;
+}
 summary { cursor: pointer; font-size: 13px; }
 .row { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 

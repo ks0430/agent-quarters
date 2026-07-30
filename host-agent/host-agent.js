@@ -95,14 +95,14 @@ const logins = new Map(); // agentName -> { child, output, exited, exitCode }
 
 const stripAnsi = (s) => s.replace(/\x1b\][^\x07]*\x07/g, ' ').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b[78=>]/g, '');
 
-function startLoginSession(name) {
+function startLoginSession(name, loginCmd, type) {
   const prev = logins.get(name);
   if (prev && !prev.exited) { try { prev.child.kill('SIGKILL'); } catch {} }
 
   const child = spawn('script', ['-qfc',
-    `docker exec -it ${containerOf(name)} claude setup-token`, '/dev/null'],
+    `docker exec -it ${containerOf(name)} ${loginCmd}`, '/dev/null'],
     { stdio: ['pipe', 'pipe', 'pipe'] });
-  const session = { child, output: '', exited: false, exitCode: null };
+  const session = { child, output: '', exited: false, exitCode: null, type };
   child.stdout.on('data', (d) => { session.output += d.toString(); });
   child.stderr.on('data', (d) => { session.output += d.toString(); });
   child.on('exit', (code) => { session.exited = true; session.exitCode = code; });
@@ -144,15 +144,32 @@ const handlers = {
     return 'deleted';
   },
 
-  // Returns the OAuth URL as the command output; keeps the pty session alive
-  // so submit-login-code can feed it the user's code later.
-  async 'start-login'({ agentName }) {
+  // claude: returns the OAuth URL; session stays alive for submit-login-code.
+  // codex: returns JSON {url, code} for device auth; the CLI polls OpenAI on
+  // its own and the outcome is reported later via the status heartbeat.
+  async 'start-login'({ agentName, agentType }) {
     const name = safeName(agentName);
     const state = await run('docker', ['inspect', '--format', '{{.State.Status}}', containerOf(name)]);
     if (!state.ok || state.stdout.trim() !== 'running') {
       throw new Error('agent container is not running - restart it first');
     }
-    const session = startLoginSession(name);
+
+    if (agentType === 'codex') {
+      const session = startLoginSession(name, 'codex login --device-auth', 'codex');
+      for (let i = 0; i < 90; i++) {
+        await sleep(500);
+        const clean = stripAnsi(session.output);
+        const url = (clean.match(/https:\/\/[^\s]*openai\.com[^\s]*/) || [])[0];
+        const code = (clean.match(/\b[A-Z0-9]{4,6}-[A-Z0-9]{4,8}\b/) || [])[0];
+        if (url && code) return JSON.stringify({ url, code });
+        if (session.exited) break;
+      }
+      try { session.child.kill('SIGKILL'); } catch {}
+      logins.delete(name);
+      throw new Error(`device auth produced no code: ${stripAnsi(session.output).slice(-300)}`);
+    }
+
+    const session = startLoginSession(name, 'claude setup-token', 'claude');
     for (let i = 0; i < 90; i++) { // up to 45s for the URL to appear
       await sleep(500);
       const url = findOauthUrl(session.output);
@@ -230,7 +247,17 @@ async function reportStatus() {
     const logs = await run('docker', ['logs', '--tail', '40', containerOf(name)]);
     agents.push({ name, state, logs: (logs.stdout + logs.stderr).slice(-6000) });
   }
-  await api('POST', '/host/status', { agents });
+
+  // Codex device-auth sessions finish on their own; report and clean up.
+  const loginResults = [];
+  for (const [name, session] of logins) {
+    if (session.type !== 'codex' || !session.exited) continue;
+    const cred = await run('docker', ['exec', containerOf(name), 'test', '-f', '/home/agent/.codex/auth.json']);
+    loginResults.push({ name, state: cred.ok ? 'success' : 'failed' });
+    logins.delete(name);
+  }
+
+  await api('POST', '/host/status', { agents, logins: loginResults });
 }
 
 async function main() {

@@ -55,12 +55,21 @@ router.post('/commands/:id/result', (req, res) => {
       .run(ok ? 'running' : 'error', agent.id);
   }
   if (agent && cmd.type === 'start-login') {
-    // On success the output IS the OAuth URL for the user to open.
-    if (ok && /^https:\/\/(claude\.com|claude\.ai)\//.test(output)) {
-      db.prepare("UPDATE agents SET login_state = 'awaiting_code', login_url = ? WHERE id = ?")
-        .run(output.trim(), agent.id);
+    // Output: plain OAuth URL (claude) or JSON {url, code} (codex device auth).
+    let url = null; let loginCode = null;
+    if (ok) {
+      if (output.trim().startsWith('{')) {
+        try { ({ url, code: loginCode } = JSON.parse(output)); } catch { /* fall through */ }
+      } else if (/^https:\/\//.test(output.trim())) {
+        url = output.trim();
+      }
+    }
+    if (url) {
+      db.prepare("UPDATE agents SET login_state = 'awaiting_code', login_url = ?, login_code = ? WHERE id = ?")
+        .run(url, loginCode, agent.id);
     } else {
-      db.prepare("UPDATE agents SET login_state = 'failed', login_url = NULL WHERE id = ?").run(agent.id);
+      db.prepare("UPDATE agents SET login_state = 'failed', login_url = NULL, login_code = NULL WHERE id = ?")
+        .run(agent.id);
     }
   }
   if (agent && cmd.type === 'submit-login-code') {
@@ -79,7 +88,21 @@ router.post('/bootstrap-error', (req, res) => {
 });
 
 // Periodic heartbeat: container states + recent logs for every agent on host.
+// Also carries async login-session outcomes (codex device auth completes on
+// its own when the user approves, with no further command round-trip).
 router.post('/status', (req, res) => {
+  for (const l of Array.isArray(req.body.logins) ? req.body.logins : []) {
+    const agent = db.prepare('SELECT * FROM agents WHERE instance_id = ? AND name = ?')
+      .get(req.instance.id, String(l.name || ''));
+    if (!agent || agent.login_state === 'logged_in') continue;
+    if (l.state === 'success') {
+      db.prepare("UPDATE agents SET login_state = 'logged_in', login_url = NULL, login_code = NULL WHERE id = ?")
+        .run(agent.id);
+    } else if (l.state === 'failed') {
+      db.prepare("UPDATE agents SET login_state = 'failed', login_url = NULL, login_code = NULL WHERE id = ?")
+        .run(agent.id);
+    }
+  }
   const list = Array.isArray(req.body.agents) ? req.body.agents : [];
   const get = db.prepare('SELECT * FROM agents WHERE instance_id = ? AND name = ?');
   const set = db.prepare('UPDATE agents SET status = ?, last_logs = ? WHERE id = ?');

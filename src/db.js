@@ -65,5 +65,6 @@ if (!agentCols.includes('auth_method')) {
 }
 if (!agentCols.includes('login_state')) db.exec('ALTER TABLE agents ADD COLUMN login_state TEXT');
 if (!agentCols.includes('login_url')) db.exec('ALTER TABLE agents ADD COLUMN login_url TEXT');
+if (!agentCols.includes('login_code')) db.exec('ALTER TABLE agents ADD COLUMN login_code TEXT');
 
 export default db;

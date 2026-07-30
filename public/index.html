@@ -91,9 +91,10 @@
 
     <label id="s-auth-wrap">Sign in with
       <select id="s-auth">
-        <option value="subscription">Claude subscription — guided login, no API key (recommended)</option>
+        <option value="subscription">Subscription — guided login, no API key (recommended)</option>
         <option value="api-key">API key</option>
       </select>
+      <small id="s-auth-hint"></small>
     </label>
 
     <label id="s-apikey-wrap" class="hidden">API key
@@ -169,11 +170,19 @@
     <p class="muted">Starting Claude Code on your server…</p>
   </div>
   <div id="l-step-code" class="hidden">
-    <p><strong>1.</strong> Open this link and sign in to Claude:</p>
-    <p><a id="l-url" href="#" target="_blank" rel="noopener" class="btn wide">Open Claude login ↗</a></p>
-    <p><strong>2.</strong> After approving, copy the code you're given and paste it here:</p>
-    <label>Authorization code <input id="l-code" placeholder="paste code…"></label>
-    <button class="btn primary wide" id="l-submit">Complete login</button>
+    <p><strong>1.</strong> Open this link and sign in:</p>
+    <p><a id="l-url" href="#" target="_blank" rel="noopener" class="btn wide">Open login page ↗</a></p>
+    <div id="l-claude-part">
+      <p><strong>2.</strong> After approving, copy the code you're given and paste it here:</p>
+      <label>Authorization code <input id="l-code" placeholder="paste code…"></label>
+      <button class="btn primary wide" id="l-submit">Complete login</button>
+    </div>
+    <div id="l-codex-part" class="hidden">
+      <p><strong>2.</strong> Enter this one-time code on that page:</p>
+      <p class="code-display" id="l-code-display"></p>
+      <p class="muted">Waiting for approval — this finishes automatically once you approve.
+         If it fails, enable “Device code login” in your ChatGPT security settings and retry.</p>
+    </div>
   </div>
   <div id="l-step-verify" class="hidden">
     <p class="muted">Verifying and installing credentials…</p>

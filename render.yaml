@@ -21,6 +21,8 @@ services:
         generateValue: true  # Render generates a strong random value
       - key: BUNDLE_ID
         value: small_3_0
+      - key: AGENT_IMAGE
+        value: ghcr.io/ks0430/agentquarters-agent:latest
       - key: MAX_INSTANCES_PER_USER
         value: "3"
       - key: BASE_URL

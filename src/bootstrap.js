@@ -4,6 +4,18 @@
 // /var/log/agentdeploy-bootstrap.log on the instance for debugging.
 
 export function buildUserData({ baseUrl, hostToken }) {
+  const imageRef = process.env.AGENT_IMAGE || '';
+  const imageStep = imageRef
+    ? `# Pull the prebuilt agent image (fast path, ~1-2 min); fall back to a
+# local build if the registry is unreachable or the package is private.
+if docker pull "${imageRef}"; then
+  docker tag "${imageRef}" agent-base
+else
+  echo "pull failed - building agent-base locally"
+  docker build -t agent-base /opt/agentdeploy
+fi`
+    : 'docker build -t agent-base /opt/agentdeploy';
+
   return `#!/bin/bash
 set -euo pipefail
 exec > /var/log/agentdeploy-bootstrap.log 2>&1
@@ -61,7 +73,7 @@ printf '[Service]\\nOOMScoreAdjust=-500\\n' > /etc/systemd/system/docker.service
 systemctl daemon-reload
 systemctl enable --now agentdeploy-host
 
-docker build -t agent-base /opt/agentdeploy
+${imageStep}
 
 echo "=== bootstrap done ==="
 `;

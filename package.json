@@ -1,0 +1,19 @@
+{
+  "name": "agentdeploy",
+  "version": "0.1.0",
+  "description": "One-click deployment of always-on AI coding agents (Claude Code / Codex via cc-connect) to cloud VMs",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "MOCK_PROVIDER=1 node src/server.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-lightsail": "^3.600.0",
+    "better-sqlite3": "^11.0.0",
+    "express": "^4.19.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

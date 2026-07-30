@@ -1,0 +1,31 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Dashboard > New > Blueprint > select this repo, and Render builds all of this.
+
+services:
+  - type: web
+    name: agentdeploy
+    runtime: node
+    plan: starter            # $7/mo, always-on (free tier sleeps — breaks host-agent polling)
+    buildCommand: npm install
+    startCommand: node src/server.js
+    healthCheckPath: /
+    autoDeploy: true         # every git push = deploy
+    disk:
+      name: agentdeploy-data # persistent disk so SQLite survives deploys/restarts
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DB_PATH
+        value: /data/agentdeploy.db
+      - key: SESSION_SECRET
+        generateValue: true  # Render generates a strong random value
+      - key: BUNDLE_ID
+        value: small_3_0
+      - key: MAX_INSTANCES_PER_USER
+        value: "3"
+      - key: BASE_URL
+        sync: false          # set in dashboard: your onrender.com URL or custom domain
+      - key: AWS_ACCESS_KEY_ID
+        sync: false          # set in dashboard (never committed)
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false          # set in dashboard (never committed)

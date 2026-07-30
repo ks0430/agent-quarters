@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentDeploy — your always-on AI coding agent</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">⚡ AgentDeploy</div>
+  <div id="userbox" class="hidden">
+    <span id="user-email"></span>
+    <button class="btn ghost" id="logout-btn">Log out</button>
+  </div>
+</header>
+
+<!-- ============ auth / landing ============ -->
+<section id="view-auth" class="hidden">
+  <div class="hero">
+    <h1>Your always-on AI coding agent,<br>deployed in one click.</h1>
+    <p>Pick a region, paste your API key — get a private cloud server running
+       Claude Code or Codex, ready to chat from Slack or Telegram. No servers
+       to manage, ever.</p>
+    <ul class="perks">
+      <li>🚀 Deployed in ~3 minutes on a dedicated instance</li>
+      <li>🔒 Isolated container, your own workspace &amp; keys</li>
+      <li>💬 Connect Slack or Telegram whenever you're ready</li>
+    </ul>
+  </div>
+  <div class="card auth-card">
+    <div class="tabs">
+      <button class="tab active" data-tab="login">Log in</button>
+      <button class="tab" data-tab="signup">Sign up</button>
+    </div>
+    <form id="auth-form">
+      <label>Email <input type="email" id="auth-email" required autocomplete="email"></label>
+      <label>Password <input type="password" id="auth-password" required minlength="8" autocomplete="current-password"></label>
+      <div class="err" id="auth-error"></div>
+      <button class="btn primary wide" id="auth-submit" type="submit">Log in</button>
+    </form>
+  </div>
+</section>
+
+<!-- ============ dashboard ============ -->
+<section id="view-dash" class="hidden">
+  <div class="dash-head">
+    <h2>Your agents</h2>
+    <button class="btn primary" id="deploy-btn">+ Deploy new agent</button>
+  </div>
+  <div id="agent-list"></div>
+  <div id="empty-state" class="empty hidden">
+    <p>No agents yet. Deploy your first one — it takes about 3 minutes.</p>
+  </div>
+</section>
+
+<!-- ============ deploy modal ============ -->
+<dialog id="deploy-modal">
+  <form id="deploy-form" method="dialog">
+    <h3>Deploy a new agent</h3>
+
+    <label>Agent name
+      <input id="d-name" pattern="[a-z0-9][a-z0-9-]{1,30}" placeholder="my-agent" required>
+    </label>
+
+    <label>Region <select id="d-region"></select></label>
+
+    <label>Agent
+      <select id="d-type">
+        <option value="claudecode">Claude Code (Anthropic)</option>
+        <option value="codex">Codex (OpenAI)</option>
+      </select>
+    </label>
+
+    <label>API key
+      <input id="d-apikey" type="password" placeholder="sk-ant-… / sk-…" required>
+      <small id="d-apikey-hint">Anthropic API key — get one at console.anthropic.com</small>
+    </label>
+
+    <label>Model <span class="opt">(optional)</span>
+      <input id="d-model" placeholder="leave empty for default">
+    </label>
+
+    <label>Permission mode <select id="d-mode"></select></label>
+
+    <fieldset>
+      <legend>Chat platform <span class="opt">(optional — connect later from the dashboard)</span></legend>
+      <select id="d-platform">
+        <option value="none">Skip for now</option>
+        <option value="telegram">Telegram</option>
+        <option value="slack">Slack</option>
+      </select>
+      <div id="d-telegram" class="pf hidden">
+        <label>Bot token <input id="d-tg-token" placeholder="123456:ABC-…"></label>
+        <label>Allowed user IDs <input id="d-tg-allow" placeholder="* (everyone)"></label>
+      </div>
+      <div id="d-slack" class="pf hidden">
+        <label>Bot token (xoxb-) <input id="d-sl-bot"></label>
+        <label>App token (xapp-) <input id="d-sl-app"></label>
+        <label>Allowed user IDs <input id="d-sl-allow" placeholder="* (everyone)"></label>
+      </div>
+    </fieldset>
+
+    <div class="err" id="deploy-error"></div>
+    <div class="row">
+      <button class="btn ghost" type="button" id="deploy-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="deploy-submit">Deploy 🚀</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ edit / connect platform modal ============ -->
+<dialog id="edit-modal">
+  <form id="edit-form" method="dialog">
+    <h3 id="edit-title">Agent settings</h3>
+    <input type="hidden" id="e-agent-id">
+
+    <label>Model <span class="opt">(optional)</span><input id="e-model"></label>
+    <label>Permission mode <select id="e-mode"></select></label>
+    <label>API key <span class="opt">(leave blank to keep current)</span>
+      <input id="e-apikey" type="password" placeholder="unchanged">
+    </label>
+
+    <fieldset>
+      <legend>Chat platform</legend>
+      <select id="e-platform">
+        <option value="none">None</option>
+        <option value="telegram">Telegram</option>
+        <option value="slack">Slack</option>
+      </select>
+      <div id="e-telegram" class="pf hidden">
+        <label>Bot token <input id="e-tg-token"></label>
+        <label>Allowed user IDs <input id="e-tg-allow" placeholder="*"></label>
+      </div>
+      <div id="e-slack" class="pf hidden">
+        <label>Bot token (xoxb-) <input id="e-sl-bot"></label>
+        <label>App token (xapp-) <input id="e-sl-app"></label>
+        <label>Allowed user IDs <input id="e-sl-allow" placeholder="*"></label>
+      </div>
+    </fieldset>
+
+    <div class="err" id="edit-error"></div>
+    <div class="row">
+      <button class="btn ghost" type="button" id="edit-cancel">Cancel</button>
+      <button class="btn primary" type="submit">Save &amp; apply</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ logs modal ============ -->
+<dialog id="logs-modal">
+  <h3 id="logs-title">Logs</h3>
+  <pre id="logs-body">loading…</pre>
+  <div class="row">
+    <button class="btn ghost" id="logs-close">Close</button>
+  </div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

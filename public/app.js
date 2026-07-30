@@ -92,7 +92,7 @@ function statusPill(inst, agent) {
   if (inst.state === 'provisioning') return mk('busy', 'Creating server…');
   if (inst.state === 'bootstrapping') return mk('busy', 'Installing software…');
   if (inst.state === 'error') return mk('bad', 'Server error');
-  if (!agent) return mk('warn', 'No agent');
+  if (!agent) return mk('warn', 'Ready — set up your agent');
   if (agent.status === 'pending') return mk('busy', 'Starting agent…');
   if (agent.status === 'running' && needsLogin(agent)) return mk('warn', 'Ready — login to Claude');
   if (agent.status === 'running' && agent.platform === 'none') return mk('warn', 'Ready — connect a platform');
@@ -127,6 +127,8 @@ async function refresh() {
       </div>
       ${inst.error ? `<div class="err">${inst.error}</div>` : ''}
       <div class="agent-actions">
+        ${!agent && inst.state !== 'error' ? `
+          <button class="btn primary" data-act="setup" data-id="${inst.id}">Set up agent</button>` : ''}
         ${agent && needsLogin(agent) && agent.status === 'running' ? `
           <button class="btn primary" data-act="login" data-id="${agent.id}">Login to Claude</button>` : ''}
         ${agent ? `
@@ -159,6 +161,8 @@ async function onAction(btn) {
       openEdit(btn.dataset);
     } else if (act === 'login') {
       openLogin(btn.dataset.id);
+    } else if (act === 'setup') {
+      openSetup(btn.dataset.id);
     } else if (act === 'delete') {
       if (confirm(`Delete ${btn.dataset.name} and its server? This cannot be undone.`)) {
         await api('DELETE', `/instances/${id}`);
@@ -184,32 +188,11 @@ function bindPlatformToggle(selectId, prefix) {
     $(`${prefix}-slack`).classList.toggle('hidden', v !== 'slack');
   };
 }
-bindPlatformToggle('d-platform', 'd');
 bindPlatformToggle('e-platform', 'e');
 
-function syncAuthFields() {
-  const type = $('d-type').value;
-  const isClaude = type === 'claudecode';
-  $('d-auth-wrap').classList.toggle('hidden', !isClaude);   // codex = api-key only
-  const auth = isClaude ? $('d-auth').value : 'api-key';
-  $('d-apikey-wrap').classList.toggle('hidden', auth === 'subscription');
-  $('d-apikey').required = auth !== 'subscription';
-  $('d-apikey-hint').textContent = type === 'codex'
-    ? 'OpenAI API key — get one at platform.openai.com'
-    : 'Anthropic API key — get one at console.anthropic.com';
-}
-$('d-auth').onchange = syncAuthFields;
-
-$('d-type').onchange = () => {
-  fillModes($('d-mode'), $('d-type').value);
-  syncAuthFields();
-};
-
 $('deploy-btn').onclick = () => {
-  fillModes($('d-mode'), $('d-type').value);
   $('d-region').innerHTML = meta.regions.map((r) => `<option value="${r.id}">${r.label}</option>`).join('');
   $('deploy-error').textContent = '';
-  syncAuthFields();
   $('deploy-modal').showModal();
 };
 $('deploy-cancel').onclick = () => $('deploy-modal').close();
@@ -237,23 +220,65 @@ $('deploy-form').onsubmit = async (e) => {
   $('deploy-error').textContent = '';
   $('deploy-submit').disabled = true;
   try {
-    await api('POST', '/deploy', {
-      name: $('d-name').value.trim(),
-      region: $('d-region').value,
-      agentType: $('d-type').value,
-      authMethod: $('d-type').value === 'claudecode' ? $('d-auth').value : 'api-key',
-      model: $('d-model').value.trim() || null,
-      mode: $('d-mode').value,
-      apiKey: $('d-apikey').value.trim(),
-      ...platformConfigFrom('d'),
-    });
+    await api('POST', '/deploy', { region: $('d-region').value });
     $('deploy-modal').close();
-    $('deploy-form').reset();
     refresh();
   } catch (err) {
     $('deploy-error').textContent = err.message;
   } finally {
     $('deploy-submit').disabled = false;
+  }
+};
+
+// ---------- agent setup (step 2) ----------
+
+function setupType() {
+  return document.querySelector('input[name="s-type"]:checked').value;
+}
+
+function syncSetupFields() {
+  const type = setupType();
+  const isClaude = type === 'claudecode';
+  $('s-auth-wrap').classList.toggle('hidden', !isClaude); // codex = api-key only
+  const auth = isClaude ? $('s-auth').value : 'api-key';
+  $('s-apikey-wrap').classList.toggle('hidden', auth === 'subscription');
+  $('s-apikey').required = auth !== 'subscription';
+  $('s-apikey-hint').textContent = type === 'codex'
+    ? 'OpenAI API key — get one at platform.openai.com'
+    : 'Anthropic API key — get one at console.anthropic.com';
+  fillModes($('s-mode'), type);
+}
+document.querySelectorAll('input[name="s-type"]').forEach((r) => { r.onchange = syncSetupFields; });
+$('s-auth').onchange = syncSetupFields;
+
+function openSetup(instanceId) {
+  $('s-instance-id').value = instanceId;
+  $('setup-error').textContent = '';
+  syncSetupFields();
+  $('setup-modal').showModal();
+}
+$('setup-cancel').onclick = () => $('setup-modal').close();
+
+$('setup-form').onsubmit = async (e) => {
+  e.preventDefault();
+  $('setup-error').textContent = '';
+  $('setup-submit').disabled = true;
+  try {
+    await api('POST', `/instances/${$('s-instance-id').value}/agent`, {
+      name: $('s-name').value.trim(),
+      agentType: setupType(),
+      authMethod: setupType() === 'claudecode' ? $('s-auth').value : 'api-key',
+      apiKey: $('s-apikey').value.trim(),
+      model: $('s-model').value.trim() || null,
+      mode: $('s-mode').value,
+      platform: 'none',
+    });
+    $('setup-modal').close();
+    refresh();
+  } catch (err) {
+    $('setup-error').textContent = err.message;
+  } finally {
+    $('setup-submit').disabled = false;
   }
 };
 
@@ -366,7 +391,7 @@ $('l-close').onclick = () => { clearInterval(loginPollTimer); $('login-modal').c
 
 (async function boot() {
   meta = await api('GET', '/meta');
-  fillModes($('d-mode'), 'claudecode');
+  fillModes($('s-mode'), 'claudecode');
   try {
     const me = await api('GET', '/me');
     if (me.email) return showDash();

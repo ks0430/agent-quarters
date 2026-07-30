@@ -58,9 +58,7 @@ router.get('/meta', (_req, res) => {
   res.json({ regions: REGIONS, bundle: BUNDLE_ID, maxInstances: MAX_INSTANCES });
 });
 
-// ---------- deploy (the one-click flow) ----------
-// Creates the instance AND queues the agent setup in a single call. The
-// create-agent command sits queued until the host-agent registers and polls.
+// ---------- step 1: deploy a server (region only) ----------
 
 router.post('/deploy', requireUser, async (req, res) => {
   const region = String(req.body.region || '');
@@ -71,19 +69,6 @@ router.post('/deploy', requireUser, async (req, res) => {
   if (count >= MAX_INSTANCES) {
     return res.status(403).json({ error: `instance limit reached (${MAX_INSTANCES})` });
   }
-
-  const spec = {
-    name: String(req.body.name || '').trim().toLowerCase(),
-    agentType: req.body.agentType,
-    authMethod: req.body.authMethod || 'api-key',
-    model: req.body.model ? String(req.body.model).trim() : null,
-    mode: req.body.mode,
-    apiKey: String(req.body.apiKey || '').trim(),
-    platform: req.body.platform || 'none',
-    platformConfig: req.body.platformConfig || {},
-  };
-  const errors = validateAgentSpec(spec);
-  if (errors.length) return res.status(400).json({ error: errors.join('; ') });
 
   if (!process.env.BASE_URL && !process.env.MOCK_PROVIDER) {
     return res.status(500).json({ error: 'server misconfigured: BASE_URL not set' });
@@ -97,16 +82,6 @@ router.post('/deploy', requireUser, async (req, res) => {
     VALUES (?, ?, ?, ?, ?)`).run(req.user.id, instanceName, region, BUNDLE_ID, hostToken);
   const instanceId = instInfo.lastInsertRowid;
 
-  const configToml = generateConfig(spec);
-  const env = generateEnv(spec);
-  db.prepare(`INSERT INTO agents (instance_id, name, agent_type, model, platform, config_toml, env_json, auth_method, login_state)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(instanceId, spec.name, spec.agentType, spec.model, spec.platform, configToml, JSON.stringify(env),
-      spec.authMethod, spec.authMethod === 'subscription' ? 'needs_login' : null);
-
-  db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
-    .run(instanceId, 'create-agent', JSON.stringify({ agentName: spec.name, configToml, env }));
-
   try {
     await getProvider().createInstance({ name: instanceName, region, bundleId: BUNDLE_ID, userData });
   } catch (err) {
@@ -116,6 +91,43 @@ router.post('/deploy', requireUser, async (req, res) => {
   }
 
   res.json({ ok: true, instanceId });
+});
+
+// ---------- step 2: set up the agent on a deployed server ----------
+// Can be called while the server is still provisioning: the create-agent
+// command queues and runs as soon as the host-agent comes online.
+
+router.post('/instances/:id/agent', requireUser, (req, res) => {
+  const inst = ownedInstance(req, res);
+  if (!inst) return;
+  if (db.prepare("SELECT COUNT(*) n FROM agents WHERE instance_id = ? AND status != 'deleted'").get(inst.id).n > 0) {
+    return res.status(409).json({ error: 'this server already has an agent' });
+  }
+
+  const spec = {
+    name: String(req.body.name || 'agent').trim().toLowerCase(),
+    agentType: req.body.agentType,
+    authMethod: req.body.authMethod || 'subscription',
+    model: req.body.model ? String(req.body.model).trim() : null,
+    mode: req.body.mode,
+    apiKey: String(req.body.apiKey || '').trim(),
+    platform: req.body.platform || 'none',
+    platformConfig: req.body.platformConfig || {},
+  };
+  if (spec.agentType === 'codex') spec.authMethod = 'api-key';
+  const errors = validateAgentSpec(spec);
+  if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+
+  const configToml = generateConfig(spec);
+  const env = generateEnv(spec);
+  db.prepare(`INSERT INTO agents (instance_id, name, agent_type, model, platform, config_toml, env_json, auth_method, login_state)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(inst.id, spec.name, spec.agentType, spec.model, spec.platform, configToml, JSON.stringify(env),
+      spec.authMethod, spec.authMethod === 'subscription' ? 'needs_login' : null);
+  db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
+    .run(inst.id, 'create-agent', JSON.stringify({ agentName: spec.name, configToml, env }));
+
+  res.json({ ok: true });
 });
 
 // ---------- instances & agents ----------

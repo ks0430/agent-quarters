@@ -57,61 +57,62 @@
 <!-- ============ deploy modal ============ -->
 <dialog id="deploy-modal">
   <form id="deploy-form" method="dialog">
-    <h3>Deploy a new agent</h3>
-
-    <label>Agent name
-      <input id="d-name" pattern="[a-z0-9][a-z0-9-]{1,30}" placeholder="my-agent" required>
-    </label>
+    <h3>Deploy a new server</h3>
+    <p class="muted">We'll create a private cloud server for your agent.
+       Once it's ready (~3 min) you'll pick which AI to run on it.</p>
 
     <label>Region <select id="d-region"></select></label>
-
-    <label>Agent
-      <select id="d-type">
-        <option value="claudecode">Claude Code (Anthropic)</option>
-        <option value="codex">Codex (OpenAI)</option>
-      </select>
-    </label>
-
-    <label id="d-auth-wrap">Authentication
-      <select id="d-auth">
-        <option value="subscription">Claude subscription — log in after deploy (recommended)</option>
-        <option value="api-key">API key</option>
-      </select>
-    </label>
-
-    <label id="d-apikey-wrap" class="hidden">API key
-      <input id="d-apikey" type="password" placeholder="sk-ant-… / sk-…">
-      <small id="d-apikey-hint">Anthropic API key — get one at console.anthropic.com</small>
-    </label>
-
-    <label>Model <span class="opt">(optional)</span>
-      <input id="d-model" placeholder="leave empty for default">
-    </label>
-
-    <label>Permission mode <select id="d-mode"></select></label>
-
-    <fieldset>
-      <legend>Chat platform <span class="opt">(optional — connect later from the dashboard)</span></legend>
-      <select id="d-platform">
-        <option value="none">Skip for now</option>
-        <option value="telegram">Telegram</option>
-        <option value="slack">Slack</option>
-      </select>
-      <div id="d-telegram" class="pf hidden">
-        <label>Bot token <input id="d-tg-token" placeholder="123456:ABC-…"></label>
-        <label>Allowed user IDs <input id="d-tg-allow" placeholder="* (everyone)"></label>
-      </div>
-      <div id="d-slack" class="pf hidden">
-        <label>Bot token (xoxb-) <input id="d-sl-bot"></label>
-        <label>App token (xapp-) <input id="d-sl-app"></label>
-        <label>Allowed user IDs <input id="d-sl-allow" placeholder="* (everyone)"></label>
-      </div>
-    </fieldset>
 
     <div class="err" id="deploy-error"></div>
     <div class="row">
       <button class="btn ghost" type="button" id="deploy-cancel">Cancel</button>
-      <button class="btn primary" type="submit" id="deploy-submit">Deploy 🚀</button>
+      <button class="btn primary" type="submit" id="deploy-submit">Deploy server 🚀</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ agent setup modal (step 2) ============ -->
+<dialog id="setup-modal">
+  <form id="setup-form" method="dialog">
+    <h3>Set up your agent</h3>
+    <input type="hidden" id="s-instance-id">
+
+    <label>Which AI do you want to run?</label>
+    <div class="choice-row">
+      <label class="choice"><input type="radio" name="s-type" value="claudecode" checked>
+        <div><strong>Claude Code</strong><br><small>by Anthropic</small></div></label>
+      <label class="choice"><input type="radio" name="s-type" value="codex">
+        <div><strong>Codex</strong><br><small>by OpenAI</small></div></label>
+    </div>
+
+    <label>Agent name
+      <input id="s-name" pattern="[a-z0-9][a-z0-9-]{1,30}" value="my-agent" required>
+    </label>
+
+    <label id="s-auth-wrap">Sign in with
+      <select id="s-auth">
+        <option value="subscription">Claude subscription — guided login, no API key (recommended)</option>
+        <option value="api-key">API key</option>
+      </select>
+    </label>
+
+    <label id="s-apikey-wrap" class="hidden">API key
+      <input id="s-apikey" type="password" placeholder="sk-ant-… / sk-…">
+      <small id="s-apikey-hint"></small>
+    </label>
+
+    <details>
+      <summary class="muted">Advanced options</summary>
+      <label>Model <span class="opt">(optional)</span>
+        <input id="s-model" placeholder="leave empty for default">
+      </label>
+      <label>Permission mode <select id="s-mode"></select></label>
+    </details>
+
+    <div class="err" id="setup-error"></div>
+    <div class="row">
+      <button class="btn ghost" type="button" id="setup-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="setup-submit">Install agent</button>
     </div>
   </form>
 </dialog>

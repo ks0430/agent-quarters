@@ -21,7 +21,11 @@ app.use('/host', hostRoutes);
 app.get('/dist/host-agent.js', (_req, res) => res.sendFile(path.join(root, 'host-agent', 'host-agent.js')));
 app.get('/dist/Dockerfile', (_req, res) => res.sendFile(path.join(root, 'agent-image', 'Dockerfile')));
 
-app.use(express.static(path.join(root, 'public')));
+// no-cache = browsers must revalidate (304 when unchanged), so UI updates
+// show up on plain reload instead of requiring a hard refresh.
+app.use(express.static(path.join(root, 'public'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+}));
 
 // Background poller: move instances provisioning -> bootstrapping once the VM
 // is running (the final -> ready transition happens when host-agent registers).

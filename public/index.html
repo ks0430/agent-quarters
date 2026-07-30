@@ -72,8 +72,15 @@
       </select>
     </label>
 
-    <label>API key
-      <input id="d-apikey" type="password" placeholder="sk-ant-… / sk-…" required>
+    <label id="d-auth-wrap">Authentication
+      <select id="d-auth">
+        <option value="subscription">Claude subscription — log in after deploy (recommended)</option>
+        <option value="api-key">API key</option>
+      </select>
+    </label>
+
+    <label id="d-apikey-wrap" class="hidden">API key
+      <input id="d-apikey" type="password" placeholder="sk-ant-… / sk-…">
       <small id="d-apikey-hint">Anthropic API key — get one at console.anthropic.com</small>
     </label>
 
@@ -145,6 +152,36 @@
       <button class="btn primary" type="submit">Save &amp; apply</button>
     </div>
   </form>
+</dialog>
+
+<!-- ============ claude login modal ============ -->
+<dialog id="login-modal">
+  <h3>Log in with your Claude subscription</h3>
+  <input type="hidden" id="l-agent-id">
+  <div id="l-step-start">
+    <p class="muted">We'll start Claude Code on your server and generate a
+       secure login link. You sign in on claude.com — your password never
+       touches this site.</p>
+    <button class="btn primary wide" id="l-start">Start login</button>
+  </div>
+  <div id="l-step-wait" class="hidden">
+    <p class="muted">Starting Claude Code on your server…</p>
+  </div>
+  <div id="l-step-code" class="hidden">
+    <p><strong>1.</strong> Open this link and sign in to Claude:</p>
+    <p><a id="l-url" href="#" target="_blank" rel="noopener" class="btn wide">Open Claude login ↗</a></p>
+    <p><strong>2.</strong> After approving, copy the code you're given and paste it here:</p>
+    <label>Authorization code <input id="l-code" placeholder="paste code…"></label>
+    <button class="btn primary wide" id="l-submit">Complete login</button>
+  </div>
+  <div id="l-step-verify" class="hidden">
+    <p class="muted">Verifying and installing credentials…</p>
+  </div>
+  <div id="l-step-done" class="hidden">
+    <p>✅ <strong>Logged in!</strong> Your agent now uses your Claude subscription.</p>
+  </div>
+  <div class="err" id="l-error"></div>
+  <div class="row"><button class="btn ghost" id="l-close">Close</button></div>
 </dialog>
 
 <!-- ============ logs modal ============ -->

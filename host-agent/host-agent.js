@@ -6,7 +6,7 @@
 // Env: CP_URL (control plane base URL), HOST_TOKEN (this instance's token).
 // Plain CommonJS, no dependencies; works on Node 18+ (Ubuntu 24.04 apt node).
 
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
@@ -48,7 +48,17 @@ async function writeAgentFiles(name, configToml, env) {
   await fs.mkdir(path.join(home, '.cc-connect'), { recursive: true });
   await fs.mkdir(path.join(home, 'workspace'), { recursive: true });
   await fs.writeFile(path.join(home, '.cc-connect', 'config.toml'), configToml);
-  const envLines = Object.entries(env || {}).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
+  const merged = { ...(env || {}) };
+  // Preserve a locally-injected subscription token across config updates —
+  // the control plane never sees it, so regenerated env would drop it.
+  if (!merged.CLAUDE_CODE_OAUTH_TOKEN) {
+    try {
+      const old = await fs.readFile(path.join(dir, 'env.list'), 'utf8');
+      const m = old.match(/^CLAUDE_CODE_OAUTH_TOKEN=(.+)$/m);
+      if (m) merged.CLAUDE_CODE_OAUTH_TOKEN = m[1];
+    } catch { /* no previous env file */ }
+  }
+  const envLines = Object.entries(merged).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
   await fs.writeFile(path.join(dir, 'env.list'), envLines, { mode: 0o600 });
   // Container runs as uid 1001; the mounted home must be writable by it.
   await run('chown', ['-R', `${AGENT_UID}:${AGENT_UID}`, home]);
@@ -67,6 +77,39 @@ async function startContainer(name, dir) {
     'agent-base']);
   if (!r.ok) throw new Error(`docker run failed: ${r.stderr.slice(0, 500)}`);
 }
+
+// ---- subscription login relay ----
+// `claude setup-token` is an interactive TUI: it needs a pty (we provide one
+// via `script`), prints an OAuth URL, waits for the code the user gets from
+// claude.com, then emits a long-lived sk-ant-oat01-* token.
+const logins = new Map(); // agentName -> { child, output, exited, exitCode }
+
+const stripAnsi = (s) => s.replace(/\x1b\][^\x07]*\x07/g, ' ').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x1b[78=>]/g, '');
+
+function startLoginSession(name) {
+  const prev = logins.get(name);
+  if (prev && !prev.exited) { try { prev.child.kill('SIGKILL'); } catch {} }
+
+  const child = spawn('script', ['-qfc',
+    `docker exec -it ${containerOf(name)} claude setup-token`, '/dev/null'],
+    { stdio: ['pipe', 'pipe', 'pipe'] });
+  const session = { child, output: '', exited: false, exitCode: null };
+  child.stdout.on('data', (d) => { session.output += d.toString(); });
+  child.stderr.on('data', (d) => { session.output += d.toString(); });
+  child.on('exit', (code) => { session.exited = true; session.exitCode = code; });
+  // Safety: never leave a login session hanging around for more than 15 min.
+  setTimeout(() => { if (!session.exited) { try { child.kill('SIGKILL'); } catch {} } }, 15 * 60 * 1000).unref();
+  logins.set(name, session);
+  return session;
+}
+
+function findOauthUrl(raw) {
+  // The URL appears inside OSC-8 hyperlink escapes; match the longest hit.
+  const matches = raw.match(/https:\/\/(?:claude\.com|claude\.ai)\/[^\s\x07\x1b"']+/g) || [];
+  return matches.sort((a, b) => b.length - a.length)[0] || null;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const handlers = {
   // create and update are the same idempotent operation: write files, (re)start.
@@ -90,6 +133,60 @@ const handlers = {
     await run('docker', ['rm', '-f', containerOf(name)]);
     await fs.rm(path.join(AGENTS_DIR, name), { recursive: true, force: true });
     return 'deleted';
+  },
+
+  // Returns the OAuth URL as the command output; keeps the pty session alive
+  // so submit-login-code can feed it the user's code later.
+  async 'start-login'({ agentName }) {
+    const name = safeName(agentName);
+    const state = await run('docker', ['inspect', '--format', '{{.State.Status}}', containerOf(name)]);
+    if (!state.ok || state.stdout.trim() !== 'running') {
+      throw new Error('agent container is not running - restart it first');
+    }
+    const session = startLoginSession(name);
+    for (let i = 0; i < 90; i++) { // up to 45s for the URL to appear
+      await sleep(500);
+      const url = findOauthUrl(session.output);
+      if (url) return url;
+      if (session.exited) break;
+    }
+    try { session.child.kill('SIGKILL'); } catch {}
+    logins.delete(name);
+    throw new Error(`setup-token produced no login URL: ${stripAnsi(session.output).slice(-300)}`);
+  },
+
+  async 'submit-login-code'({ agentName, code }) {
+    const name = safeName(agentName);
+    const session = logins.get(name);
+    if (!session || session.exited) {
+      throw new Error('login session expired - click "Start login" again');
+    }
+    session.child.stdin.write(String(code).trim() + '\r');
+    for (let i = 0; i < 120 && !session.exited; i++) await sleep(500); // up to 60s
+    logins.delete(name);
+    if (!session.exited) { try { session.child.kill('SIGKILL'); } catch {} }
+
+    const token = (session.output.match(/sk-ant-oat01-[A-Za-z0-9_-]{20,}/g) || []).pop();
+    if (token) {
+      // Inject the token and recreate the container (docker restart would not
+      // re-read env.list; startContainer does rm -f + run).
+      const dir = path.join(AGENTS_DIR, name);
+      let envText = '';
+      try { envText = await fs.readFile(path.join(dir, 'env.list'), 'utf8'); } catch {}
+      const lines = envText.split('\n').filter((l) => l && !l.startsWith('CLAUDE_CODE_OAUTH_TOKEN='));
+      lines.push(`CLAUDE_CODE_OAUTH_TOKEN=${token}`);
+      await fs.writeFile(path.join(dir, 'env.list'), lines.join('\n') + '\n', { mode: 0o600 });
+      await startContainer(name, dir);
+      return 'logged in, token installed, container restarted';
+    }
+    // No token in output: check whether the CLI stored credentials in the
+    // home volume instead (also acceptable - it persists across restarts).
+    const cred = await run('docker', ['exec', containerOf(name), 'test', '-f', '/home/agent/.claude/.credentials.json']);
+    if (cred.ok) {
+      await run('docker', ['restart', containerOf(name)]);
+      return 'logged in via credentials file';
+    }
+    throw new Error(`login failed: ${stripAnsi(session.output).slice(-300)}`);
   },
 };
 

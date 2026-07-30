@@ -58,4 +58,12 @@ CREATE TABLE IF NOT EXISTS commands (
 );
 `);
 
+// Column migrations for databases created before these fields existed.
+const agentCols = db.prepare('PRAGMA table_info(agents)').all().map((c) => c.name);
+if (!agentCols.includes('auth_method')) {
+  db.exec("ALTER TABLE agents ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'api-key'");
+}
+if (!agentCols.includes('login_state')) db.exec('ALTER TABLE agents ADD COLUMN login_state TEXT');
+if (!agentCols.includes('login_url')) db.exec('ALTER TABLE agents ADD COLUMN login_url TEXT');
+
 export default db;

@@ -83,6 +83,10 @@ async function showDash() {
 
 // ---------- dashboard rendering ----------
 
+function needsLogin(agent) {
+  return agent && agent.auth_method === 'subscription' && agent.login_state !== 'logged_in';
+}
+
 function statusPill(inst, agent) {
   const mk = (cls, label) => `<span class="pill ${cls}"><span class="dot"></span>${label}</span>`;
   if (inst.state === 'provisioning') return mk('busy', 'Creating server…');
@@ -90,6 +94,7 @@ function statusPill(inst, agent) {
   if (inst.state === 'error') return mk('bad', 'Server error');
   if (!agent) return mk('warn', 'No agent');
   if (agent.status === 'pending') return mk('busy', 'Starting agent…');
+  if (agent.status === 'running' && needsLogin(agent)) return mk('warn', 'Ready — login to Claude');
   if (agent.status === 'running' && agent.platform === 'none') return mk('warn', 'Ready — connect a platform');
   if (agent.status === 'running') return mk('live', 'Live');
   if (agent.status === 'stopped') return mk('bad', 'Stopped');
@@ -122,6 +127,8 @@ async function refresh() {
       </div>
       ${inst.error ? `<div class="err">${inst.error}</div>` : ''}
       <div class="agent-actions">
+        ${agent && needsLogin(agent) && agent.status === 'running' ? `
+          <button class="btn primary" data-act="login" data-id="${agent.id}">Login to Claude</button>` : ''}
         ${agent ? `
           <button class="btn" data-act="edit" data-id="${agent.id}" data-platform="${agent.platform}"
             data-model="${agent.model || ''}" data-type="${agent.agent_type}">${connectLabel}</button>
@@ -150,6 +157,8 @@ async function onAction(btn) {
       $('logs-body').textContent = r.logs || '(no logs yet)';
     } else if (act === 'edit') {
       openEdit(btn.dataset);
+    } else if (act === 'login') {
+      openLogin(btn.dataset.id);
     } else if (act === 'delete') {
       if (confirm(`Delete ${btn.dataset.name} and its server? This cannot be undone.`)) {
         await api('DELETE', `/instances/${id}`);
@@ -178,17 +187,29 @@ function bindPlatformToggle(selectId, prefix) {
 bindPlatformToggle('d-platform', 'd');
 bindPlatformToggle('e-platform', 'e');
 
-$('d-type').onchange = () => {
-  fillModes($('d-mode'), $('d-type').value);
-  $('d-apikey-hint').textContent = $('d-type').value === 'codex'
+function syncAuthFields() {
+  const type = $('d-type').value;
+  const isClaude = type === 'claudecode';
+  $('d-auth-wrap').classList.toggle('hidden', !isClaude);   // codex = api-key only
+  const auth = isClaude ? $('d-auth').value : 'api-key';
+  $('d-apikey-wrap').classList.toggle('hidden', auth === 'subscription');
+  $('d-apikey').required = auth !== 'subscription';
+  $('d-apikey-hint').textContent = type === 'codex'
     ? 'OpenAI API key — get one at platform.openai.com'
     : 'Anthropic API key — get one at console.anthropic.com';
+}
+$('d-auth').onchange = syncAuthFields;
+
+$('d-type').onchange = () => {
+  fillModes($('d-mode'), $('d-type').value);
+  syncAuthFields();
 };
 
 $('deploy-btn').onclick = () => {
   fillModes($('d-mode'), $('d-type').value);
   $('d-region').innerHTML = meta.regions.map((r) => `<option value="${r.id}">${r.label}</option>`).join('');
   $('deploy-error').textContent = '';
+  syncAuthFields();
   $('deploy-modal').showModal();
 };
 $('deploy-cancel').onclick = () => $('deploy-modal').close();
@@ -220,6 +241,7 @@ $('deploy-form').onsubmit = async (e) => {
       name: $('d-name').value.trim(),
       region: $('d-region').value,
       agentType: $('d-type').value,
+      authMethod: $('d-type').value === 'claudecode' ? $('d-auth').value : 'api-key',
       model: $('d-model').value.trim() || null,
       mode: $('d-mode').value,
       apiKey: $('d-apikey').value.trim(),
@@ -267,6 +289,78 @@ $('edit-form').onsubmit = async (e) => {
 };
 
 $('logs-close').onclick = () => $('logs-modal').close();
+
+// ---------- claude subscription login ----------
+
+let loginPollTimer = null;
+
+function loginStep(step) {
+  for (const s of ['start', 'wait', 'code', 'verify', 'done']) {
+    $(`l-step-${s}`).classList.toggle('hidden', s !== step);
+  }
+}
+
+function openLogin(agentId) {
+  $('l-agent-id').value = agentId;
+  $('l-error').textContent = '';
+  $('l-code').value = '';
+  loginStep('start');
+  $('login-modal').showModal();
+}
+
+async function pollLogin(agentId, until, onReach, tries = 60) {
+  clearInterval(loginPollTimer);
+  loginPollTimer = setInterval(async () => {
+    try {
+      const r = await api('GET', `/agents/${agentId}/login`);
+      if (r.state === until) {
+        clearInterval(loginPollTimer);
+        onReach(r);
+      } else if (r.state === 'failed') {
+        clearInterval(loginPollTimer);
+        $('l-error').textContent = 'Login failed — check the agent logs, then try again.';
+        loginStep('start');
+      } else if (--tries <= 0) {
+        clearInterval(loginPollTimer);
+        $('l-error').textContent = 'Timed out — please try again.';
+        loginStep('start');
+      }
+    } catch { /* transient */ }
+  }, 2000);
+}
+
+$('l-start').onclick = async () => {
+  const id = $('l-agent-id').value;
+  $('l-error').textContent = '';
+  loginStep('wait');
+  try {
+    await api('POST', `/agents/${id}/login/start`);
+    pollLogin(id, 'awaiting_code', (r) => {
+      $('l-url').href = r.url;
+      loginStep('code');
+    });
+  } catch (err) {
+    $('l-error').textContent = err.message;
+    loginStep('start');
+  }
+};
+
+$('l-submit').onclick = async () => {
+  const id = $('l-agent-id').value;
+  const code = $('l-code').value.trim();
+  if (!code) { $('l-error').textContent = 'Paste the code first.'; return; }
+  $('l-error').textContent = '';
+  loginStep('verify');
+  try {
+    await api('POST', `/agents/${id}/login/code`, { code });
+    pollLogin(id, 'logged_in', () => { loginStep('done'); refresh(); });
+  } catch (err) {
+    $('l-error').textContent = err.message;
+    loginStep('code');
+  }
+};
+
+$('l-close').onclick = () => { clearInterval(loginPollTimer); $('login-modal').close(); };
 
 // ---------- boot ----------
 

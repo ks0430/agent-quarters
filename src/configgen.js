@@ -67,6 +67,9 @@ mode = "quiet"
 
 export function generateEnv(agent) {
   const env = {};
+  // Subscription auth: no key at deploy time. The host-agent injects
+  // CLAUDE_CODE_OAUTH_TOKEN into the container after the web login relay.
+  if (agent.authMethod === 'subscription') return env;
   if (agent.agentType === 'claudecode') env.ANTHROPIC_API_KEY = agent.apiKey;
   if (agent.agentType === 'codex') env.OPENAI_API_KEY = agent.apiKey;
   return env;
@@ -77,7 +80,12 @@ export function validateAgentSpec(spec) {
   if (!/^[a-z0-9][a-z0-9-]{1,30}$/.test(spec.name || ''))
     errors.push('name must be lowercase letters, digits, dashes (2-31 chars)');
   if (!AGENT_TYPES.includes(spec.agentType)) errors.push('invalid agent type');
-  if (!spec.apiKey || spec.apiKey.length < 8) errors.push('API key required');
+  if (!['api-key', 'subscription'].includes(spec.authMethod || 'api-key'))
+    errors.push('invalid auth method');
+  if (spec.authMethod === 'subscription' && spec.agentType !== 'claudecode')
+    errors.push('subscription login is only available for Claude Code');
+  if (spec.authMethod !== 'subscription' && (!spec.apiKey || spec.apiKey.length < 8))
+    errors.push('API key required');
   const platform = spec.platform || 'none';
   if (platform !== 'none') {
     if (!PLATFORMS.includes(platform)) errors.push('invalid platform');

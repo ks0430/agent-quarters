@@ -44,15 +44,27 @@ router.post('/commands/:id/result', (req, res) => {
   db.prepare("UPDATE commands SET status = ?, result = ?, updated_at = datetime('now') WHERE id = ?")
     .run(ok ? 'done' : 'failed', output, cmd.id);
 
-  // Reflect create/update results onto the agent row.
-  if (['create-agent', 'update-agent', 'restart-agent'].includes(cmd.type)) {
-    const { agentName } = JSON.parse(cmd.payload);
-    const agent = db.prepare('SELECT * FROM agents WHERE instance_id = ? AND name = ?')
-      .get(req.instance.id, agentName);
-    if (agent) {
-      db.prepare('UPDATE agents SET status = ? WHERE id = ?')
-        .run(ok ? 'running' : 'error', agent.id);
+  const { agentName } = JSON.parse(cmd.payload);
+  const agent = agentName && db.prepare('SELECT * FROM agents WHERE instance_id = ? AND name = ?')
+    .get(req.instance.id, agentName);
+
+  // Reflect command outcomes onto the agent row.
+  if (agent && ['create-agent', 'update-agent', 'restart-agent'].includes(cmd.type)) {
+    db.prepare('UPDATE agents SET status = ? WHERE id = ?')
+      .run(ok ? 'running' : 'error', agent.id);
+  }
+  if (agent && cmd.type === 'start-login') {
+    // On success the output IS the OAuth URL for the user to open.
+    if (ok && /^https:\/\/(claude\.com|claude\.ai)\//.test(output)) {
+      db.prepare("UPDATE agents SET login_state = 'awaiting_code', login_url = ? WHERE id = ?")
+        .run(output.trim(), agent.id);
+    } else {
+      db.prepare("UPDATE agents SET login_state = 'failed', login_url = NULL WHERE id = ?").run(agent.id);
     }
+  }
+  if (agent && cmd.type === 'submit-login-code') {
+    db.prepare('UPDATE agents SET login_state = ?, login_url = NULL WHERE id = ?')
+      .run(ok ? 'logged_in' : 'failed', agent.id);
   }
   res.json({ ok: true });
 });

@@ -75,6 +75,7 @@ router.post('/deploy', requireUser, async (req, res) => {
   const spec = {
     name: String(req.body.name || '').trim().toLowerCase(),
     agentType: req.body.agentType,
+    authMethod: req.body.authMethod || 'api-key',
     model: req.body.model ? String(req.body.model).trim() : null,
     mode: req.body.mode,
     apiKey: String(req.body.apiKey || '').trim(),
@@ -98,9 +99,10 @@ router.post('/deploy', requireUser, async (req, res) => {
 
   const configToml = generateConfig(spec);
   const env = generateEnv(spec);
-  db.prepare(`INSERT INTO agents (instance_id, name, agent_type, model, platform, config_toml, env_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(instanceId, spec.name, spec.agentType, spec.model, spec.platform, configToml, JSON.stringify(env));
+  db.prepare(`INSERT INTO agents (instance_id, name, agent_type, model, platform, config_toml, env_json, auth_method, login_state)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(instanceId, spec.name, spec.agentType, spec.model, spec.platform, configToml, JSON.stringify(env),
+      spec.authMethod, spec.authMethod === 'subscription' ? 'needs_login' : null);
 
   db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
     .run(instanceId, 'create-agent', JSON.stringify({ agentName: spec.name, configToml, env }));
@@ -143,7 +145,7 @@ router.get('/instances', requireUser, (req, res) => {
     "SELECT id, name, region, bundle, state, public_ip, last_seen, error, created_at FROM instances WHERE user_id = ? AND state != 'deleted' ORDER BY id DESC"
   ).all(req.user.id);
   const agentsFor = db.prepare(
-    "SELECT id, name, agent_type, model, platform, status, created_at FROM agents WHERE instance_id = ? AND status != 'deleted'"
+    "SELECT id, name, agent_type, model, platform, status, auth_method, login_state, created_at FROM agents WHERE instance_id = ? AND status != 'deleted'"
   );
   res.json(instances.map((i) => ({ ...i, agents: agentsFor.all(i.id) })));
 });
@@ -174,6 +176,39 @@ router.post('/agents/:id/config', requireUser, (req, res) => {
   db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
     .run(agent.iid, 'update-agent', JSON.stringify({ agentName: agent.name, configToml, env }));
   res.json({ ok: true });
+});
+
+// ---------- subscription login relay ----------
+// start: runs `claude setup-token` inside the agent's container (via the
+// host-agent) and captures the OAuth URL for the user to open.
+router.post('/agents/:id/login/start', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  if (agent.auth_method !== 'subscription') {
+    return res.status(400).json({ error: 'agent does not use subscription login' });
+  }
+  db.prepare("UPDATE agents SET login_state = 'starting', login_url = NULL WHERE id = ?").run(agent.id);
+  db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
+    .run(agent.iid, 'start-login', JSON.stringify({ agentName: agent.name }));
+  res.json({ ok: true });
+});
+
+// code: forwards the code the user got from claude.com back into the CLI.
+router.post('/agents/:id/login/code', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  const code = String(req.body.code || '').trim();
+  if (!code || code.length > 500) return res.status(400).json({ error: 'invalid code' });
+  db.prepare("UPDATE agents SET login_state = 'verifying' WHERE id = ?").run(agent.id);
+  db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
+    .run(agent.iid, 'submit-login-code', JSON.stringify({ agentName: agent.name, code }));
+  res.json({ ok: true });
+});
+
+router.get('/agents/:id/login', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  res.json({ state: agent.login_state, url: agent.login_url });
 });
 
 router.post('/agents/:id/restart', requireUser, (req, res) => {

@@ -70,6 +70,14 @@ router.post('/commands/:id/result', (req, res) => {
   res.json({ ok: true });
 });
 
+// Bootstrap failure report: surfaces the on-instance error on the dashboard.
+router.post('/bootstrap-error', (req, res) => {
+  const message = String(req.body.message || 'bootstrap failed').slice(0, 500);
+  console.error(`bootstrap error on ${req.instance.name}: ${message}`);
+  db.prepare('UPDATE instances SET error = ? WHERE id = ?').run(message, req.instance.id);
+  res.json({ ok: true });
+});
+
 // Periodic heartbeat: container states + recent logs for every agent on host.
 router.post('/status', (req, res) => {
   const list = Array.isArray(req.body.agents) ? req.body.agents : [];

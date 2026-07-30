@@ -172,6 +172,7 @@ router.post('/agents/:id/config', requireUser, (req, res) => {
   const spec = {
     name: agent.name,
     agentType: req.body.agentType || agent.agent_type,
+    authMethod: agent.auth_method, // fixed at setup; login state must survive edits
     model: req.body.model !== undefined ? (req.body.model || null) : agent.model,
     mode: req.body.mode,
     apiKey: String(req.body.apiKey || '').trim() || existingKey,

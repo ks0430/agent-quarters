@@ -136,7 +136,8 @@ async function refresh() {
             Login to ${agent.agent_type === 'codex' ? 'ChatGPT' : 'Claude'}</button>` : ''}
         ${agent ? `
           <button class="btn" data-act="edit" data-id="${agent.id}" data-platform="${agent.platform}"
-            data-model="${agent.model || ''}" data-type="${agent.agent_type}">${connectLabel}</button>
+            data-model="${agent.model || ''}" data-type="${agent.agent_type}"
+            data-auth="${agent.auth_method}">${connectLabel}</button>
           <button class="btn" data-act="logs" data-id="${agent.id}" data-name="${agent.name}">Logs</button>
           <button class="btn" data-act="restart" data-id="${agent.id}">Restart</button>` : ''}
         <button class="btn ghost danger" data-act="delete" data-id="${inst.id}" data-name="${inst.name}">Delete</button>
@@ -298,6 +299,8 @@ function openEdit(data) {
   $('e-model').value = data.model || '';
   fillModes($('e-mode'), data.type);
   $('e-apikey').value = '';
+  // Subscription agents have no API key to edit — hide the field entirely.
+  $('e-apikey').closest('label').classList.toggle('hidden', data.auth === 'subscription');
   $('e-platform').value = data.platform === 'none' ? 'telegram' : data.platform;
   $('e-platform').onchange();
   $('edit-error').textContent = '';

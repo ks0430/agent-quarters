@@ -132,7 +132,7 @@ async function refresh() {
         ${!agent && inst.state !== 'error' ? `
           <button class="btn primary" data-act="setup" data-id="${inst.id}">Set up agent</button>` : ''}
         ${agent && needsLogin(agent) && agent.status === 'running' ? `
-          <button class="btn primary" data-act="login" data-id="${agent.id}">
+          <button class="btn primary" data-act="login" data-id="${agent.id}" data-type="${agent.agent_type}">
             Login to ${agent.agent_type === 'codex' ? 'ChatGPT' : 'Claude'}</button>` : ''}
         ${agent ? `
           <button class="btn" data-act="edit" data-id="${agent.id}" data-platform="${agent.platform}"
@@ -163,7 +163,7 @@ async function onAction(btn) {
     } else if (act === 'edit') {
       openEdit(btn.dataset);
     } else if (act === 'login') {
-      openLogin(btn.dataset.id);
+      openLogin(btn.dataset.id, btn.dataset.type);
     } else if (act === 'setup') {
       openSetup(btn.dataset.id);
     } else if (act === 'delete') {
@@ -333,7 +333,12 @@ function loginStep(step) {
   }
 }
 
-function openLogin(agentId) {
+function openLogin(agentId, agentType) {
+  const codex = agentType === 'codex';
+  $('l-title').textContent = `Log in with your ${codex ? 'ChatGPT' : 'Claude'} subscription`;
+  $('l-intro').textContent = `We'll start ${codex ? 'Codex' : 'Claude Code'} on your server and ` +
+    `generate a secure login link. You sign in on ${codex ? 'openai.com' : 'claude.com'} — ` +
+    'your password never touches this site.';
   $('l-agent-id').value = agentId;
   $('l-error').textContent = '';
   $('l-code').value = '';

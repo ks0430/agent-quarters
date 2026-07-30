@@ -158,12 +158,10 @@
 
 <!-- ============ claude login modal ============ -->
 <dialog id="login-modal">
-  <h3>Log in with your Claude subscription</h3>
+  <h3 id="l-title">Log in with your subscription</h3>
   <input type="hidden" id="l-agent-id">
   <div id="l-step-start">
-    <p class="muted">We'll start Claude Code on your server and generate a
-       secure login link. You sign in on claude.com — your password never
-       touches this site.</p>
+    <p class="muted" id="l-intro"></p>
     <button class="btn primary wide" id="l-start">Start login</button>
   </div>
   <div id="l-step-wait" class="hidden">

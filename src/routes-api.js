@@ -9,6 +9,7 @@ import {
 } from './auth.js';
 import { generateConfig, generateEnv, validateAgentSpec } from './configgen.js';
 import { instanceUsage } from './usage.js';
+import { chargeInstance, MIN_DEPLOY_BALANCE_CENTS, RATE_CENTS_HOUR } from './billing.js';
 import { getProvider, REGIONS } from './provider.js';
 import { buildUserData } from './bootstrap.js';
 
@@ -65,10 +66,22 @@ router.post('/deploy', requireUser, async (req, res) => {
   const region = String(req.body.region || '');
   if (!REGIONS.some((r) => r.id === region)) return res.status(400).json({ error: 'invalid region' });
 
+  const account = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   const count = db.prepare("SELECT COUNT(*) n FROM instances WHERE user_id = ? AND state != 'deleted'")
     .get(req.user.id).n;
-  if (count >= MAX_INSTANCES) {
-    return res.status(403).json({ error: `instance limit reached (${MAX_INSTANCES})` });
+
+  const planLimit = account.plan === 'multi' ? 5 : 1;
+  if (count >= Math.min(planLimit, MAX_INSTANCES)) {
+    return res.status(403).json({
+      error: account.plan === 'multi'
+        ? `server limit reached (${Math.min(planLimit, MAX_INSTANCES)})`
+        : 'free accounts run 1 server — subscribe to Multi in Settings for up to 5',
+    });
+  }
+  if (account.balance_cents < MIN_DEPLOY_BALANCE_CENTS) {
+    return res.status(402).json({
+      error: `insufficient credits — top up in Settings (servers cost $${(RATE_CENTS_HOUR * 24 / 100).toFixed(2)}/day)`,
+    });
   }
 
   if (!process.env.BASE_URL && !process.env.MOCK_PROVIDER) {
@@ -248,6 +261,7 @@ router.delete('/instances/:id', requireUser, async (req, res) => {
     // Instance may already be gone on the provider side; proceed either way.
     console.error(`deleteInstance ${inst.name}:`, err.message || err);
   }
+  try { chargeInstance(inst); } catch (err) { console.error('final charge:', err.message); }
   db.prepare("UPDATE instances SET state = 'deleted', deleted_at = datetime('now') WHERE id = ?").run(inst.id);
   db.prepare("UPDATE agents SET status = 'deleted' WHERE instance_id = ?").run(inst.id);
   res.json({ ok: true });

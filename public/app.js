@@ -107,9 +107,31 @@ function regionLabel(id) {
   return (meta.regions.find((r) => r.id === id) || { label: id }).label;
 }
 
+async function refreshBalance() {
+  try {
+    const b = await api('GET', '/billing');
+    const banner = $('balance-banner');
+    const days = b.burnCentsDay > 0 ? b.balanceCents / b.burnCentsDay : Infinity;
+    if (b.balanceCents <= 0 && b.activeServers > 0) {
+      banner.className = 'danger';
+      banner.innerHTML = `⚠️ Your credit balance is empty — servers will be deleted after a 48h grace period.
+        <a href="/settings.html">Top up now</a>`;
+    } else if (days < 3) {
+      banner.className = '';
+      banner.innerHTML = `Your credits cover ~${days.toFixed(1)} more days.
+        <a href="/settings.html">Top up in Settings</a>`;
+    } else {
+      banner.classList.add('hidden');
+      return;
+    }
+    banner.classList.remove('hidden');
+  } catch { /* billing not configured yet */ }
+}
+
 async function refresh() {
   let instances;
   try { instances = await api('GET', '/instances'); } catch { return showAuth(); }
+  refreshBalance();
 
   $('empty-state').classList.toggle('hidden', instances.length > 0);
   $('agent-list').innerHTML = instances.map((inst) => {

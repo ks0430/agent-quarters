@@ -59,6 +59,12 @@ legend { color: var(--muted); font-size: 13px; padding: 0 6px; }
 .choice:has(input:checked) { border-color: var(--accent); background: var(--panel2); }
 .choice input { width: auto; margin: 0; }
 details { margin-top: 14px; }
+#balance-banner {
+  border-radius: 10px; padding: 10px 16px; margin-bottom: 6px; font-size: 14px;
+  border: 1px solid var(--yellow); color: var(--yellow); background: rgba(210,153,34,.08);
+}
+#balance-banner.danger { border-color: var(--red); color: var(--red); background: rgba(248,81,73,.08); }
+#balance-banner a { color: inherit; font-weight: 600; }
 .code-display {
   font: 700 26px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
   text-align: center; letter-spacing: 2px; color: var(--accent);

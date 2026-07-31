@@ -58,8 +58,27 @@ CREATE TABLE IF NOT EXISTS commands (
 );
 `);
 
+db.exec(`
+CREATE TABLE IF NOT EXISTS credit_ledger (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  delta_cents REAL NOT NULL,
+  balance_after REAL NOT NULL,
+  reason TEXT NOT NULL,
+  ref TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_ref ON credit_ledger(ref) WHERE ref IS NOT NULL;
+`);
+
 // Column migrations for databases created before these fields existed.
+const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+if (!userCols.includes('balance_cents')) db.exec('ALTER TABLE users ADD COLUMN balance_cents REAL NOT NULL DEFAULT 0');
+if (!userCols.includes('plan')) db.exec("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'");
+if (!userCols.includes('stripe_customer_id')) db.exec('ALTER TABLE users ADD COLUMN stripe_customer_id TEXT');
+if (!userCols.includes('negative_since')) db.exec('ALTER TABLE users ADD COLUMN negative_since TEXT');
 const instCols = db.prepare('PRAGMA table_info(instances)').all().map((c) => c.name);
+if (!instCols.includes('last_billed_at')) db.exec('ALTER TABLE instances ADD COLUMN last_billed_at TEXT');
 if (!instCols.includes('deleted_at')) {
   db.exec('ALTER TABLE instances ADD COLUMN deleted_at TEXT');
   // Backfill: pre-migration deleted rows have no lifetime record; treating

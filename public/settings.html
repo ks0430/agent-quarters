@@ -28,6 +28,20 @@
   </div>
 
   <div class="card">
+    <h3 style="margin-top:0">Billing</h3>
+    <div class="stats" id="bill-stats"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center" id="bill-actions">
+      <span class="muted">Add credits:</span>
+      <span id="topup-buttons"></span>
+      <span style="flex:1"></span>
+      <span id="plan-box"></span>
+    </div>
+    <div class="err" id="bill-error"></div>
+    <h4 style="margin-bottom:4px">Recent transactions</h4>
+    <table id="ledger"></table>
+  </div>
+
+  <div class="card">
     <h3 style="margin-top:0">Server usage &amp; costs</h3>
     <p class="muted">Your servers are billed at our AWS cost — no markup. Estimates mirror
        AWS Lightsail hourly billing, capped at the server's monthly price.</p>
@@ -40,10 +54,62 @@ const $ = (id) => document.getElementById(id);
 const money = (n) => '$' + n.toFixed(2);
 const fmtDate = (s) => s ? s.slice(0, 16) + ' UTC' : '';
 
+async function post(path, body) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+}
+
+async function loadBilling() {
+  const b = await fetch('/api/billing').then((r) => r.json());
+  const daysLeft = b.burnCentsDay > 0 ? (b.balanceCents / b.burnCentsDay).toFixed(1) : '∞';
+  $('bill-stats').innerHTML = [
+    ['Credit balance', money(b.balanceCents / 100)],
+    ['Burn rate', money(b.burnCentsDay / 100) + '/day'],
+    ['Runway', daysLeft + ' days'],
+    ['Plan', b.plan === 'multi' ? 'Multi (5 servers)' : 'Free (1 server)'],
+  ].map(([k, v]) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+
+  $('topup-buttons').innerHTML = b.topupAmounts.map((a) =>
+    `<button class="btn" data-topup="${a}">$${a}</button>`).join(' ');
+  document.querySelectorAll('[data-topup]').forEach((btn) => {
+    btn.onclick = async () => {
+      try { location.href = (await post('/api/billing/topup', { amount: +btn.dataset.topup })).url; }
+      catch (e) { $('bill-error').textContent = e.message; }
+    };
+  });
+
+  $('plan-box').innerHTML = b.plan === 'multi'
+    ? '<button class="btn" id="manage-btn">Manage subscription</button>'
+    : '<button class="btn primary" id="sub-btn">Upgrade to Multi — $9/mo, up to 5 servers</button>';
+  const sub = $('sub-btn'); const manage = $('manage-btn');
+  if (sub) sub.onclick = async () => {
+    try { location.href = (await post('/api/billing/subscribe')).url; }
+    catch (e) { $('bill-error').textContent = e.message; }
+  };
+  if (manage) manage.onclick = async () => {
+    try { location.href = (await post('/api/billing/portal')).url; }
+    catch (e) { $('bill-error').textContent = e.message; }
+  };
+
+  $('ledger').innerHTML = '<tr><th>Date (UTC)</th><th>Change</th><th class="num">Balance after</th><th>Reason</th></tr>' +
+    (b.ledger.length ? b.ledger.map((l) => `<tr>
+      <td>${l.created_at.slice(0, 16)}</td>
+      <td style="color:${l.delta_cents >= 0 ? 'var(--green)' : 'var(--muted)'}">${l.delta_cents >= 0 ? '+' : ''}${money(l.delta_cents / 100)}</td>
+      <td class="num">${money(l.balance_after / 100)}</td><td>${l.reason}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="muted">No transactions yet — add credits to get started.</td></tr>');
+}
+
 (async () => {
   const me = await fetch('/api/me').then((r) => r.json());
   if (!me.email) { location.href = '/'; return; }
   $('acct-email').textContent = me.email;
+  loadBilling().catch(() => {});
 
   const d = await fetch('/api/usage').then((r) => r.json());
   $('stats').innerHTML = [

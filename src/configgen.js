@@ -9,8 +9,11 @@ export const AGENT_TYPES = ['claudecode', 'codex'];
 export const PLATFORMS = ['telegram', 'slack'];
 
 // mode: claudecode -> default | acceptEdits | plan | bypassPermissions
-//       codex     -> suggest | auto-edit | full-auto
-const DEFAULT_MODES = { claudecode: 'acceptEdits', codex: 'auto-edit' };
+//       codex     -> suggest | auto-edit | full-auto | yolo
+// Default = full autonomy: the per-agent container is the sandbox, and the
+// agents' own guardrails misbehave inside it (codex's landlock sandbox
+// errors in docker; restricted modes make models confabulate refusals).
+const DEFAULT_MODES = { claudecode: 'bypassPermissions', codex: 'yolo' };
 
 export function generateConfig(agent) {
   const { name, agentType, model, mode, platform, platformConfig } = agent;

@@ -2,17 +2,21 @@
 
 const $ = (id) => document.getElementById(id);
 
+// Full autonomy is the recommended default: each agent runs in its own
+// isolated container (that IS the sandbox), and the CLIs' internal guardrails
+// misbehave inside docker (codex's sandbox errors; restricted modes make
+// agents confabulate refusals instead of asking).
 const MODES = {
   claudecode: [
-    ['acceptEdits', 'Accept edits (recommended)'],
+    ['bypassPermissions', 'Full autonomy (recommended)'],
+    ['acceptEdits', 'Accept edits, ask for commands'],
     ['default', 'Ask before actions'],
     ['plan', 'Plan only'],
-    ['bypassPermissions', 'Full autonomy'],
   ],
   codex: [
-    ['auto-edit', 'Auto edit (recommended)'],
+    ['yolo', 'Full autonomy (recommended)'],
+    ['auto-edit', 'Auto edit, ask for commands'],
     ['suggest', 'Suggest only'],
-    ['full-auto', 'Full autonomy'],
   ],
 };
 

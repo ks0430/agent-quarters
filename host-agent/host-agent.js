@@ -60,6 +60,23 @@ async function writeAgentFiles(name, configToml, env) {
   }
   const envLines = Object.entries(merged).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
   await fs.writeFile(path.join(dir, 'env.list'), envLines, { mode: 0o600 });
+
+  // Seed agent guides (once): Codex reads AGENTS.md, Claude reads CLAUDE.md
+  // at session start — without this, agents don't know how to deliver files
+  // back to the user's chat and invent excuses instead.
+  const guide = [
+    '# Chat bridge (cc-connect)', '',
+    "This workspace is bridged to the user's chat (Slack/Telegram) via cc-connect.", '',
+    '- Your normal text replies are delivered to the chat automatically.',
+    '- To send a FILE to the user: run `cc-connect send --file /absolute/path`',
+    '- To send an IMAGE (renders inline): `cc-connect send --image /absolute/path.png`',
+    '- Audio/video: `cc-connect send --audio x.mp3` / `cc-connect send --video x.mp4`',
+    '- You can repeat --file/--image flags to send several attachments at once.', '',
+  ].join('\n');
+  for (const f of ['AGENTS.md', 'CLAUDE.md']) {
+    const p = path.join(home, 'workspace', f);
+    try { await fs.access(p); } catch { await fs.writeFile(p, guide); }
+  }
   // Container runs as uid 1001; the mounted home must be writable by it.
   await run('chown', ['-R', `${AGENT_UID}:${AGENT_UID}`, home]);
   return dir;

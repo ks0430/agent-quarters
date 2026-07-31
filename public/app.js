@@ -269,7 +269,9 @@ function updateSlackManifestLink() {
       'reactions:write', 'users:read',
     ] } },
     settings: {
-      event_subscriptions: { bot_events: ['app_mention', 'message.im', 'message.channels'] },
+      // app_mention + message.im ONLY (matches cc-connect's official manifest):
+      // adding message.channels makes channel @mentions fire twice → double replies.
+      event_subscriptions: { bot_events: ['app_mention', 'message.im'] },
       interactivity: { is_enabled: true },
       socket_mode_enabled: true,
     },

@@ -216,9 +216,37 @@ function bindPlatformToggle(selectId, prefix) {
 }
 bindPlatformToggle('e-platform', 'e');
 
-// Slack app manifest: pre-fills the entire app config (Socket Mode, events,
-// scopes, DM tab) so users only click Create → generate token → Install.
+// Slack app manifest: pre-fills the entire app config so users only click
+// Create → generate token → Install. Mirrors cc-connect's official manifest
+// (docs/slack-app-manifest.json): full scopes plus its native slash commands
+// (/new /list /model /mode etc.) — Slack only forwards declared commands.
 // The bot name comes from the "Bot name in Slack" field, live.
+const SLACK_COMMANDS = [
+  ['/ps', 'Send a P.S. to the running task', '[message]'],
+  ['/new', 'Start a new session', '[name]'],
+  ['/list', 'List agent sessions', ''],
+  ['/switch', 'Resume a session by its list number', '<number>'],
+  ['/delete', 'Delete sessions by list number(s)', '<number>'],
+  ['/name', 'Name a session for easy identification', '[number] <text>'],
+  ['/current', 'Show current active session', ''],
+  ['/history', 'Show last n messages', '[n]'],
+  ['/model', 'View or switch model', '[name]'],
+  ['/mode', 'View or switch permission mode', '[default|edit|plan|yolo]'],
+  ['/stop', 'Stop current execution', ''],
+  ['/compress', 'Compress conversation context', ''],
+  ['/quiet', 'Toggle thinking and tool progress display', ''],
+  ['/status', 'Show system status', ''],
+  ['/usage', 'Show account and model quota usage', ''],
+  ['/help', 'Show available commands', ''],
+  ['/shell', 'Run a shell command and return the output', '<command>'],
+  ['/memory', 'View or edit agent memory files', ''],
+  ['/lang', 'View or switch language', '[en|zh|ja|es|auto]'],
+  ['/cron', 'Manage scheduled tasks', '[add|list|del]'],
+  ['/skills', 'List agent skills', ''],
+  ['/reasoning', 'View or switch reasoning effort', '[low|medium|high]'],
+  ['/workspace', 'Manage workspaces', '[list|switch|add]'],
+];
+
 function updateSlackManifestLink() {
   const name = ($('e-sl-name').value.trim() || 'my-agent').slice(0, 35);
   const manifest = {
@@ -226,10 +254,18 @@ function updateSlackManifestLink() {
     features: {
       bot_user: { display_name: name, always_online: true },
       app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false },
+      slash_commands: SLACK_COMMANDS.map(([command, description, usage_hint]) => ({
+        command, description, ...(usage_hint ? { usage_hint } : {}), should_escape: false,
+      })),
     },
-    oauth_config: { scopes: { bot: ['chat:write', 'im:history', 'channels:history'] } },
+    oauth_config: { scopes: { bot: [
+      'app_mentions:read', 'channels:history', 'channels:read', 'chat:write', 'commands',
+      'groups:history', 'groups:read', 'im:history', 'im:read', 'im:write',
+      'reactions:write', 'users:read',
+    ] } },
     settings: {
-      event_subscriptions: { bot_events: ['message.im', 'message.channels'] },
+      event_subscriptions: { bot_events: ['app_mention', 'message.im', 'message.channels'] },
+      interactivity: { is_enabled: true },
       socket_mode_enabled: true,
     },
   };

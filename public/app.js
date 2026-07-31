@@ -249,10 +249,15 @@ const SLACK_COMMANDS = [
 
 function updateSlackManifestLink() {
   const name = ($('e-sl-name').value.trim() || 'my-agent').slice(0, 35);
+  // App title allows spaces; the bot username is strict (letters, digits,
+  // - and _ only) — Slack's "invalid name" errors otherwise, misleadingly
+  // pointing at slash commands.
+  const botName = (name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'agent').slice(0, 32);
   const manifest = {
+    _metadata: { major_version: 2, minor_version: 1 },
     display_information: { name, description: 'Your always-on AI coding agent' },
     features: {
-      bot_user: { display_name: name, always_online: true },
+      bot_user: { display_name: botName, always_online: true },
       app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false },
       slash_commands: SLACK_COMMANDS.map(([command, description, usage_hint]) => ({
         command, description, ...(usage_hint ? { usage_hint } : {}), should_escape: false,

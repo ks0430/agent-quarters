@@ -159,7 +159,7 @@ async function refresh() {
         ${agent ? `
           <button class="btn" data-act="edit" data-id="${agent.id}" data-platform="${agent.platform}"
             data-model="${agent.model || ''}" data-type="${agent.agent_type}"
-            data-auth="${agent.auth_method}">${connectLabel}</button>
+            data-auth="${agent.auth_method}" data-name="${agent.name}">${connectLabel}</button>
           <button class="btn" data-act="logs" data-id="${agent.id}" data-name="${agent.name}">Logs</button>
           <button class="btn" data-act="restart" data-id="${agent.id}">Restart</button>` : ''}
         <button class="btn ghost danger" data-act="delete" data-id="${inst.id}" data-name="${inst.name}">Delete</button>
@@ -218,20 +218,25 @@ bindPlatformToggle('e-platform', 'e');
 
 // Slack app manifest: pre-fills the entire app config (Socket Mode, events,
 // scopes, DM tab) so users only click Create → generate token → Install.
-const SLACK_MANIFEST = {
-  display_information: { name: 'AgentQuarters Agent', description: 'Your always-on AI coding agent' },
-  features: {
-    bot_user: { display_name: 'agent', always_online: true },
-    app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false },
-  },
-  oauth_config: { scopes: { bot: ['chat:write', 'im:history', 'channels:history'] } },
-  settings: {
-    event_subscriptions: { bot_events: ['message.im', 'message.channels'] },
-    socket_mode_enabled: true,
-  },
-};
-document.getElementById('slack-manifest-link').href =
-  'https://api.slack.com/apps?new_app=1&manifest_json=' + encodeURIComponent(JSON.stringify(SLACK_MANIFEST));
+// The bot name comes from the "Bot name in Slack" field, live.
+function updateSlackManifestLink() {
+  const name = ($('e-sl-name').value.trim() || 'my-agent').slice(0, 35);
+  const manifest = {
+    display_information: { name, description: 'Your always-on AI coding agent' },
+    features: {
+      bot_user: { display_name: name, always_online: true },
+      app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false },
+    },
+    oauth_config: { scopes: { bot: ['chat:write', 'im:history', 'channels:history'] } },
+    settings: {
+      event_subscriptions: { bot_events: ['message.im', 'message.channels'] },
+      socket_mode_enabled: true,
+    },
+  };
+  $('slack-manifest-link').href =
+    'https://api.slack.com/apps?new_app=1&manifest_json=' + encodeURIComponent(JSON.stringify(manifest));
+}
+$('e-sl-name').oninput = updateSlackManifestLink;
 
 $('deploy-btn').onclick = () => {
   $('d-region').innerHTML = meta.regions.map((r) => `<option value="${r.id}">${r.label}</option>`).join('');
@@ -340,6 +345,8 @@ function openEdit(data) {
   $('e-apikey').value = '';
   // Subscription agents have no API key to edit — hide the field entirely.
   $('e-apikey').closest('label').classList.toggle('hidden', data.auth === 'subscription');
+  $('e-sl-name').value = data.name || '';
+  updateSlackManifestLink();
   $('e-platform').value = data.platform === 'none' ? 'telegram' : data.platform;
   $('e-platform').onchange();
   $('edit-error').textContent = '';

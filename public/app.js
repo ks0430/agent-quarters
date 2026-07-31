@@ -234,10 +234,10 @@ const SLACK_COMMANDS = [
   ['/mode', 'View or switch permission mode', '[default|edit|plan|yolo]'],
   ['/stop', 'Stop current execution', ''],
   ['/compress', 'Compress conversation context', ''],
+  // note: /status and /help are Slack built-ins — registering them makes
+  // manifest validation fail with "slash command has invalid name"
   ['/quiet', 'Toggle thinking and tool progress display', ''],
-  ['/status', 'Show system status', ''],
   ['/usage', 'Show account and model quota usage', ''],
-  ['/help', 'Show available commands', ''],
   ['/shell', 'Run a shell command and return the output', '<command>'],
   ['/memory', 'View or edit agent memory files', ''],
   ['/lang', 'View or switch language', '[en|zh|ja|es|auto]'],

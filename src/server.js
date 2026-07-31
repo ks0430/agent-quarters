@@ -24,6 +24,21 @@ app.use('/api', apiRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/host', hostRoutes);
 
+// Internal support/debug endpoint: agent states + logs, gated by a token
+// that lives only in the host env (for operator tooling, not end users).
+app.get('/internal/debug/agents', (req, res) => {
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!process.env.INTERNAL_DEBUG_TOKEN || token !== process.env.INTERNAL_DEBUG_TOKEN) {
+    return res.status(404).end();
+  }
+  const rows = db.prepare(`
+    SELECT a.id, a.name, a.agent_type, a.platform, a.status, a.auth_method, a.login_state,
+           a.last_logs, i.name AS instance, i.state AS instance_state, i.last_seen, i.public_ip
+    FROM agents a JOIN instances i ON i.id = a.instance_id
+    WHERE a.status != 'deleted' ORDER BY a.id DESC`).all();
+  res.json(rows);
+});
+
 // Files fetched by instance bootstrap scripts.
 app.get('/dist/host-agent.js', (_req, res) => res.sendFile(path.join(root, 'host-agent', 'host-agent.js')));
 app.get('/dist/Dockerfile', (_req, res) => res.sendFile(path.join(root, 'agent-image', 'Dockerfile')));

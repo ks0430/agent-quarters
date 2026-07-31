@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings — AgentDeploy</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .stats { display: flex; gap: 14px; flex-wrap: wrap; margin: 14px 0; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 20px; }
+  .stat .v { font-size: 22px; font-weight: 700; }
+  .stat .k { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  .dead { opacity: .45; }
+  .num { text-align: right; }
+  section.page { max-width: 860px; margin: 24px auto; padding: 0 24px; }
+  .card + .card { margin-top: 18px; }
+</style>
+</head>
+<body>
+<header><div class="brand">⚡ AgentDeploy — settings</div><a class="btn ghost" href="/">← Dashboard</a></header>
+<section class="page" id="content">
+  <div class="card">
+    <h3 style="margin-top:0">Account</h3>
+    <p class="muted">Signed in as <strong id="acct-email">…</strong></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Server usage &amp; costs</h3>
+    <p class="muted">Your servers are billed at our AWS cost — no markup. Estimates mirror
+       AWS Lightsail hourly billing, capped at the server's monthly price.</p>
+    <div class="stats" id="stats"></div>
+    <table id="servers"></table>
+  </div>
+</section>
+<script>
+const $ = (id) => document.getElementById(id);
+const money = (n) => '$' + n.toFixed(2);
+const fmtDate = (s) => s ? s.slice(0, 16) + ' UTC' : '';
+
+(async () => {
+  const me = await fetch('/api/me').then((r) => r.json());
+  if (!me.email) { location.href = '/'; return; }
+  $('acct-email').textContent = me.email;
+
+  const d = await fetch('/api/usage').then((r) => r.json());
+  $('stats').innerHTML = [
+    ['Active servers', d.summary.activeInstances],
+    ['Monthly server cost', money(d.summary.monthlyRunRate)],
+    ['This month so far', money(d.summary.costThisMonth)],
+    ['All-time', money(d.summary.costAllTime)],
+  ].map(([k, v]) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+
+  $('servers').innerHTML = '<tr><th>Server</th><th>Region</th><th class="num">Agents</th><th>Created</th><th class="num">Hours</th><th class="num">This month</th><th class="num">All-time</th><th>Status</th></tr>' +
+    (d.instances.length ? d.instances.map((i) => `
+      <tr class="${i.running ? '' : 'dead'}">
+        <td>${i.name}</td><td>${i.region}</td><td class="num">${i.agents}</td>
+        <td>${fmtDate(i.created_at)}</td><td class="num">${i.hoursTotal}</td>
+        <td class="num">${money(i.costThisMonth)}</td><td class="num">${money(i.costTotal)}</td>
+        <td>${i.running ? i.state : 'deleted'}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="8" class="muted">No servers yet.</td></tr>');
+})();
+</script>
+</body>
+</html>

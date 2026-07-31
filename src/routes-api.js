@@ -253,6 +253,37 @@ router.delete('/instances/:id', requireUser, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- per-user usage (shown on the settings page) ----------
+
+router.get('/usage', requireUser, (req, res) => {
+  const instances = db.prepare(`
+    SELECT i.*,
+      (SELECT COUNT(*) FROM agents a WHERE a.instance_id = i.id AND a.status != 'deleted') AS agent_count
+    FROM instances i WHERE i.user_id = ?
+    ORDER BY (i.deleted_at IS NULL) DESC, i.id DESC`).all(req.user.id);
+
+  const rows = instances.map((i) => ({
+    name: i.name,
+    region: i.region,
+    bundle: i.bundle,
+    state: i.state,
+    agents: i.agent_count,
+    created_at: i.created_at,
+    deleted_at: i.deleted_at,
+    ...instanceUsage(i),
+  }));
+
+  res.json({
+    summary: {
+      activeInstances: rows.filter((r) => r.running).length,
+      monthlyRunRate: rows.reduce((s, r) => s + r.monthlyRate, 0),
+      costThisMonth: +rows.reduce((s, r) => s + r.costThisMonth, 0).toFixed(2),
+      costAllTime: +rows.reduce((s, r) => s + r.costTotal, 0).toFixed(2),
+    },
+    instances: rows,
+  });
+});
+
 // ---------- internal cost accounting (admin only) ----------
 
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').toLowerCase()

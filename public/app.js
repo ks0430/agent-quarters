@@ -216,6 +216,23 @@ function bindPlatformToggle(selectId, prefix) {
 }
 bindPlatformToggle('e-platform', 'e');
 
+// Slack app manifest: pre-fills the entire app config (Socket Mode, events,
+// scopes, DM tab) so users only click Create → generate token → Install.
+const SLACK_MANIFEST = {
+  display_information: { name: 'AgentQuarters Agent', description: 'Your always-on AI coding agent' },
+  features: {
+    bot_user: { display_name: 'agent', always_online: true },
+    app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false },
+  },
+  oauth_config: { scopes: { bot: ['chat:write', 'im:history', 'channels:history'] } },
+  settings: {
+    event_subscriptions: { bot_events: ['message.im', 'message.channels'] },
+    socket_mode_enabled: true,
+  },
+};
+document.getElementById('slack-manifest-link').href =
+  'https://api.slack.com/apps?new_app=1&manifest_json=' + encodeURIComponent(JSON.stringify(SLACK_MANIFEST));
+
 $('deploy-btn').onclick = () => {
   $('d-region').innerHTML = meta.regions.map((r) => `<option value="${r.id}">${r.label}</option>`).join('');
   $('deploy-error').textContent = '';

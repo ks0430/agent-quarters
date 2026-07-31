@@ -144,6 +144,12 @@
         <label>Allowed user IDs <input id="e-tg-allow" placeholder="*"></label>
       </div>
       <div id="e-slack" class="pf hidden">
+        <p class="muted" style="margin:6px 0">
+          <a id="slack-manifest-link" href="#" target="_blank" rel="noopener">⚡ Create the Slack app (pre-configured) ↗</a><br>
+          <small>Opens Slack with everything pre-filled. Then: Create → Basic Information →
+          "Generate Token" under App-Level Tokens (scope <code>connections:write</code>, copy the xapp-…) →
+          Install App → copy the xoxb-… token. Paste both below.</small>
+        </p>
         <label>Bot token (xoxb-) <input id="e-sl-bot"></label>
         <label>App token (xapp-) <input id="e-sl-app"></label>
         <label>Allowed user IDs <input id="e-sl-allow" placeholder="*"></label>

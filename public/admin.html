@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentDeploy — internal cost dashboard</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .stats { display: flex; gap: 14px; flex-wrap: wrap; margin: 20px 0; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 20px; }
+  .stat .v { font-size: 24px; font-weight: 700; }
+  .stat .k { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 30px; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  .dead { opacity: .45; }
+  .num { text-align: right; }
+</style>
+</head>
+<body>
+<header><div class="brand">⚡ AgentDeploy — internal costs</div><a class="btn ghost" href="/">← Dashboard</a></header>
+<section style="max-width:1000px;margin:20px auto;padding:0 24px">
+  <div class="stats" id="stats"></div>
+  <h3>Per user</h3>
+  <table id="users"></table>
+  <h3>Instances</h3>
+  <table id="instances"></table>
+  <p class="muted">Estimates mirror Lightsail hourly billing capped at the bundle's monthly price.
+     Excludes data-transfer overages. Not an invoice — reconcile with the AWS bill monthly.</p>
+</section>
+<script>
+const $ = (id) => document.getElementById(id);
+const money = (n) => '$' + n.toFixed(2);
+fetch('/api/admin/usage').then(async (r) => {
+  if (!r.ok) { document.body.innerHTML = '<p style="margin:40px;text-align:center">Not authorized.</p>'; return; }
+  const d = await r.json();
+  $('stats').innerHTML = [
+    ['Active servers', d.summary.activeInstances],
+    ['Monthly run-rate', money(d.summary.monthlyRunRate)],
+    ['Cost this month', money(d.summary.costThisMonth)],
+    ['Cost all-time', money(d.summary.costAllTime)],
+  ].map(([k, v]) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+
+  $('users').innerHTML = '<tr><th>User</th><th class="num">Active</th><th class="num">Run-rate</th><th class="num">This month</th><th class="num">All-time</th></tr>' +
+    d.users.map((u) => `<tr><td>${u.email}</td><td class="num">${u.active}</td><td class="num">${money(u.monthlyRate)}</td>
+      <td class="num">${money(u.costThisMonth)}</td><td class="num">${money(u.costTotal)}</td></tr>`).join('');
+
+  $('instances').innerHTML = '<tr><th>Name</th><th>User</th><th>Region</th><th>Bundle</th><th class="num">Agents</th><th class="num">Hours</th><th class="num">This month</th><th class="num">All-time</th><th>Status</th></tr>' +
+    d.instances.map((i) => `<tr class="${i.running ? '' : 'dead'}"><td>${i.name}</td><td>${i.email}</td><td>${i.region}</td>
+      <td>${i.bundle}</td><td class="num">${i.agents}</td><td class="num">${i.hoursTotal}</td>
+      <td class="num">${money(i.costThisMonth)}</td><td class="num">${money(i.costTotal)}</td>
+      <td>${i.running ? i.state : 'deleted'}</td></tr>`).join('');
+});
+</script>
+</body>
+</html>

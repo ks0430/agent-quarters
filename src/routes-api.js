@@ -8,6 +8,7 @@ import {
   setSessionCookie, clearSessionCookie, requireUser,
 } from './auth.js';
 import { generateConfig, generateEnv, validateAgentSpec } from './configgen.js';
+import { instanceUsage } from './usage.js';
 import { getProvider, REGIONS } from './provider.js';
 import { buildUserData } from './bootstrap.js';
 
@@ -247,9 +248,60 @@ router.delete('/instances/:id', requireUser, async (req, res) => {
     // Instance may already be gone on the provider side; proceed either way.
     console.error(`deleteInstance ${inst.name}:`, err.message || err);
   }
-  db.prepare("UPDATE instances SET state = 'deleted' WHERE id = ?").run(inst.id);
+  db.prepare("UPDATE instances SET state = 'deleted', deleted_at = datetime('now') WHERE id = ?").run(inst.id);
   db.prepare("UPDATE agents SET status = 'deleted' WHERE instance_id = ?").run(inst.id);
   res.json({ ok: true });
+});
+
+// ---------- internal cost accounting (admin only) ----------
+
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').toLowerCase()
+  .split(',').map((s) => s.trim()).filter(Boolean);
+
+function requireAdmin(req, res, next) {
+  if (!req.user || !ADMIN_EMAILS.includes(req.user.email)) {
+    return res.status(404).json({ error: 'not found' }); // don't reveal the endpoint
+  }
+  next();
+}
+
+router.get('/admin/usage', requireUser, requireAdmin, (_req, res) => {
+  const instances = db.prepare(`
+    SELECT i.*, u.email,
+      (SELECT COUNT(*) FROM agents a WHERE a.instance_id = i.id AND a.status != 'deleted') AS agent_count
+    FROM instances i JOIN users u ON u.id = i.user_id
+    ORDER BY (i.deleted_at IS NULL) DESC, i.id DESC`).all();
+
+  const rows = instances.map((i) => ({
+    name: i.name,
+    email: i.email,
+    region: i.region,
+    bundle: i.bundle,
+    state: i.state,
+    agents: i.agent_count,
+    created_at: i.created_at,
+    deleted_at: i.deleted_at,
+    ...instanceUsage(i),
+  }));
+
+  const byUser = {};
+  for (const r of rows) {
+    byUser[r.email] ??= { email: r.email, active: 0, monthlyRate: 0, costThisMonth: 0, costTotal: 0 };
+    const u = byUser[r.email];
+    if (r.running) u.active += 1;
+    u.monthlyRate += r.monthlyRate;
+    u.costThisMonth = +(u.costThisMonth + r.costThisMonth).toFixed(2);
+    u.costTotal = +(u.costTotal + r.costTotal).toFixed(2);
+  }
+
+  const summary = {
+    activeInstances: rows.filter((r) => r.running).length,
+    monthlyRunRate: rows.reduce((s, r) => s + r.monthlyRate, 0),
+    costThisMonth: +rows.reduce((s, r) => s + r.costThisMonth, 0).toFixed(2),
+    costAllTime: +rows.reduce((s, r) => s + r.costTotal, 0).toFixed(2),
+  };
+
+  res.json({ summary, users: Object.values(byUser), instances: rows });
 });
 
 export default router;

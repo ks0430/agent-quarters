@@ -59,6 +59,13 @@ CREATE TABLE IF NOT EXISTS commands (
 `);
 
 // Column migrations for databases created before these fields existed.
+const instCols = db.prepare('PRAGMA table_info(instances)').all().map((c) => c.name);
+if (!instCols.includes('deleted_at')) {
+  db.exec('ALTER TABLE instances ADD COLUMN deleted_at TEXT');
+  // Backfill: pre-migration deleted rows have no lifetime record; treating
+  // them as zero-duration slightly undercounts history but keeps math sane.
+  db.exec("UPDATE instances SET deleted_at = created_at WHERE state = 'deleted'");
+}
 const agentCols = db.prepare('PRAGMA table_info(agents)').all().map((c) => c.name);
 if (!agentCols.includes('auth_method')) {
   db.exec("ALTER TABLE agents ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'api-key'");

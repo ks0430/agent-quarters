@@ -265,6 +265,7 @@ function updateSlackManifestLink() {
     },
     oauth_config: { scopes: { bot: [
       'app_mentions:read', 'channels:history', 'channels:read', 'chat:write', 'commands',
+      'files:read', 'files:write', // receive user uploads / send files back
       'groups:history', 'groups:read', 'im:history', 'im:read', 'im:write',
       'reactions:write', 'users:read',
     ] } },

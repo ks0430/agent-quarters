@@ -169,6 +169,7 @@ async function refresh() {
             data-auth="${agent.auth_method}" data-name="${agent.name}">${connectLabel}</button>
           <button class="btn" data-act="logs" data-id="${agent.id}" data-name="${agent.name}">Logs</button>
           <button class="btn" data-act="restart" data-id="${agent.id}">Restart</button>` : ''}
+        <button class="btn" data-act="details" data-id="${inst.id}" data-name="${inst.name}">Details</button>
         ${inst.state === 'ready' ? `
           <button class="btn" data-act="pause" data-id="${inst.id}" data-name="${inst.name}">Pause</button>` : ''}
         ${inst.state === 'paused' ? `
@@ -200,6 +201,8 @@ async function onAction(btn) {
       openLogin(btn.dataset.id, btn.dataset.type);
     } else if (act === 'setup') {
       openSetup(btn.dataset.id);
+    } else if (act === 'details') {
+      openDetails(btn.dataset.id);
     } else if (act === 'pause') {
       if (confirm(`Pause ${btn.dataset.name}? The server is snapshotted and shut down (~$1/mo instead of ~$18/mo). Your agent, logins and files are preserved; resume anytime in ~3 minutes.`)) {
         btn.disabled = true;
@@ -436,6 +439,51 @@ $('edit-form').onsubmit = async (e) => {
 };
 
 $('logs-close').onclick = () => $('logs-modal').close();
+
+// ---------- server details / activity timeline ----------
+
+const EVENT_ICONS = {
+  deploy: '🚀', vm: '⚙️', ip: '📌', ready: '✅', agent: '🤖', login: '🔑',
+  platform: '💬', pause: '⏸️', resume: '▶️', snapshot: '📦', billing: '💳',
+  delete: '🗑️', error: '❌',
+};
+let detailsTimer = null;
+
+async function renderDetails(instanceId) {
+  const instances = await api('GET', '/instances');
+  const inst = instances.find((i) => String(i.id) === String(instanceId));
+  if (!inst) { $('details-modal').close(); return; }
+  const agent = inst.agents[0];
+  $('det-title').textContent = `${agent ? agent.name : inst.name} — details`;
+  const rows = [
+    ['Server', inst.name], ['Region', regionLabel(inst.region)],
+    ['State', inst.state], ['Size', inst.bundle],
+    ['IP address', inst.static_ip ? `📌 ${inst.static_ip} (static)` : (inst.public_ip || '—')],
+    ['Created', (inst.created_at || '').slice(0, 16) + ' UTC'],
+  ];
+  if (agent) {
+    rows.push(['Agent', `${agent.name} (${agent.agent_type === 'codex' ? 'Codex' : 'Claude Code'})`],
+      ['Auth', agent.auth_method === 'subscription' ? `subscription (${agent.login_state || '—'})` : 'API key'],
+      ['Platform', agent.platform === 'none' ? 'not connected' : agent.platform]);
+  }
+  $('det-info').innerHTML = rows.map(([k, v]) => `<span class="k">${k}</span><span>${v}</span>`).join('');
+
+  const { events } = await api('GET', `/instances/${instanceId}/events`);
+  $('det-timeline').innerHTML = events.length
+    ? events.map((e) => `<div class="tl-row ${e.kind === 'error' ? 'err' : ''}">
+        <span class="tl-time">${e.created_at.slice(5, 16)}</span>
+        <span>${EVENT_ICONS[e.kind] || '·'}</span>
+        <span class="tl-msg">${e.message}</span></div>`).join('')
+    : '<p class="muted">No activity recorded yet.</p>';
+}
+
+function openDetails(instanceId) {
+  $('details-modal').showModal();
+  renderDetails(instanceId).catch(() => {});
+  clearInterval(detailsTimer);
+  detailsTimer = setInterval(() => renderDetails(instanceId).catch(() => {}), 4000);
+}
+$('det-close').onclick = () => { clearInterval(detailsTimer); $('details-modal').close(); };
 
 // ---------- claude subscription login ----------
 

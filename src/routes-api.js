@@ -12,6 +12,7 @@ import { instanceUsage } from './usage.js';
 import {
   chargeInstance, teardownInstance, MIN_DEPLOY_BALANCE_CENTS, RATE_CENTS_HOUR,
 } from './billing.js';
+import { logEvent, getEvents } from './events.js';
 import { getProvider, REGIONS } from './provider.js';
 import { buildUserData } from './bootstrap.js';
 
@@ -111,6 +112,7 @@ router.post('/deploy', requireUser, async (req, res) => {
   }
 
   console.log(`deployed ${instanceName} in ${region} for ${req.user.email}`);
+  logEvent(instanceId, 'deploy', `Server requested in ${region} (${BUNDLE_ID}${staticIpName ? ', with static IP' : ''})`);
   res.json({ ok: true, instanceId });
 });
 
@@ -147,6 +149,7 @@ router.post('/instances/:id/agent', requireUser, (req, res) => {
   db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
     .run(inst.id, 'create-agent', JSON.stringify({ agentName: spec.name, configToml, env }));
 
+  logEvent(inst.id, 'agent', `Agent "${spec.name}" (${spec.agentType}, ${spec.authMethod}) installation queued`);
   res.json({ ok: true });
 });
 
@@ -208,6 +211,7 @@ router.post('/agents/:id/config', requireUser, (req, res) => {
     .run(spec.agentType, spec.model, spec.platform, configToml, JSON.stringify(env), agent.id);
   db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
     .run(agent.iid, 'update-agent', JSON.stringify({ agentName: agent.name, configToml, env }));
+  logEvent(agent.iid, 'agent', `Configuration updated (platform: ${spec.platform}, mode: ${spec.mode || 'default'})`);
   res.json({ ok: true });
 });
 
@@ -223,6 +227,7 @@ router.post('/agents/:id/login/start', requireUser, (req, res) => {
   db.prepare("UPDATE agents SET login_state = 'starting', login_url = NULL, login_code = NULL WHERE id = ?").run(agent.id);
   db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
     .run(agent.iid, 'start-login', JSON.stringify({ agentName: agent.name, agentType: agent.agent_type }));
+  logEvent(agent.iid, 'login', `Subscription login started (${agent.agent_type === 'codex' ? 'ChatGPT device auth' : 'Claude OAuth'})`);
   res.json({ ok: true });
 });
 
@@ -261,6 +266,7 @@ router.get('/agents/:id/logs', requireUser, (req, res) => {
 router.delete('/instances/:id', requireUser, async (req, res) => {
   const inst = ownedInstance(req, res);
   if (!inst) return;
+  logEvent(inst.id, 'delete', 'Deletion requested by user');
   await teardownInstance(inst); // VM + snapshot + static IP, tolerant of absences
   res.json({ ok: true });
 });
@@ -283,6 +289,7 @@ router.post('/instances/:id/pause', requireUser, async (req, res) => {
   db.prepare("UPDATE instances SET state = 'pausing', snapshot_name = ? WHERE id = ?")
     .run(snapshotName, inst.id);
   console.log(`pausing ${inst.name} (snapshot ${snapshotName})`);
+  logEvent(inst.id, 'pause', 'Pause requested — snapshotting the server (usually 2-5 min)');
   res.json({ ok: true });
 });
 
@@ -305,7 +312,15 @@ router.post('/instances/:id/resume', requireUser, async (req, res) => {
   }
   db.prepare("UPDATE instances SET state = 'resuming', paused_at = NULL WHERE id = ?").run(inst.id);
   console.log(`resuming ${inst.name} from ${inst.snapshot_name}`);
+  logEvent(inst.id, 'resume', 'Resume requested — restoring server from snapshot (usually ~3 min)');
   res.json({ ok: true });
+});
+
+// Activity timeline for the Details panel.
+router.get('/instances/:id/events', requireUser, (req, res) => {
+  const inst = ownedInstance(req, res);
+  if (!inst) return;
+  res.json({ events: getEvents(inst.id) });
 });
 
 // ---------- per-user usage (shown on the settings page) ----------

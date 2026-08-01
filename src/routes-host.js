@@ -3,6 +3,7 @@
 
 import { Router } from 'express';
 import db from './db.js';
+import { logEvent } from './events.js';
 
 const router = Router();
 
@@ -26,6 +27,9 @@ router.post('/register', (req, res) => {
   console.log(`host registered: ${req.instance.name} (instance ${req.instance.id})`);
   if (!['resuming', 'pausing'].includes(req.instance.state)) {
     db.prepare("UPDATE instances SET state = 'ready' WHERE id = ?").run(req.instance.id);
+  }
+  if (req.instance.state !== 'ready') {
+    logEvent(req.instance.id, 'ready', 'Server software online — host connected to the control plane');
   }
   res.json({ ok: true, pollSeconds: 5, statusSeconds: 15 });
 });
@@ -57,6 +61,9 @@ router.post('/commands/:id/result', (req, res) => {
   if (agent && ['create-agent', 'update-agent', 'restart-agent'].includes(cmd.type)) {
     db.prepare('UPDATE agents SET status = ? WHERE id = ?')
       .run(ok ? 'running' : 'error', agent.id);
+    logEvent(req.instance.id, ok ? 'agent' : 'error',
+      ok ? `Agent container ${cmd.type === 'create-agent' ? 'started' : cmd.type === 'update-agent' ? 'reconfigured and restarted' : 'restarted'}`
+         : `Agent ${cmd.type} failed: ${output.slice(0, 150)}`);
   }
   if (agent && cmd.type === 'start-login') {
     // Output: plain OAuth URL (claude) or JSON {url, code} (codex device auth).
@@ -71,14 +78,18 @@ router.post('/commands/:id/result', (req, res) => {
     if (url) {
       db.prepare("UPDATE agents SET login_state = 'awaiting_code', login_url = ?, login_code = ? WHERE id = ?")
         .run(url, loginCode, agent.id);
+      logEvent(req.instance.id, 'login', 'Login link generated — waiting for user approval');
     } else {
       db.prepare("UPDATE agents SET login_state = 'failed', login_url = NULL, login_code = NULL WHERE id = ?")
         .run(agent.id);
+      logEvent(req.instance.id, 'error', `Login start failed: ${output.slice(0, 150)}`);
     }
   }
   if (agent && cmd.type === 'submit-login-code') {
     db.prepare('UPDATE agents SET login_state = ?, login_url = NULL WHERE id = ?')
       .run(ok ? 'logged_in' : 'failed', agent.id);
+    logEvent(req.instance.id, ok ? 'login' : 'error',
+      ok ? 'Logged in — subscription credentials installed' : `Login failed: ${output.slice(0, 150)}`);
   }
   res.json({ ok: true });
 });
@@ -88,6 +99,7 @@ router.post('/bootstrap-error', (req, res) => {
   const message = String(req.body.message || 'bootstrap failed').slice(0, 500);
   console.error(`bootstrap error on ${req.instance.name}: ${message}`);
   db.prepare('UPDATE instances SET error = ? WHERE id = ?').run(message, req.instance.id);
+  logEvent(req.instance.id, 'error', message.slice(0, 300));
   res.json({ ok: true });
 });
 
@@ -107,9 +119,11 @@ router.post('/status', (req, res) => {
     if (l.state === 'success') {
       db.prepare("UPDATE agents SET login_state = 'logged_in', login_url = NULL, login_code = NULL WHERE id = ?")
         .run(agent.id);
+      logEvent(req.instance.id, 'login', 'Logged in — subscription credentials installed');
     } else if (l.state === 'failed') {
       db.prepare("UPDATE agents SET login_state = 'failed', login_url = NULL, login_code = NULL WHERE id = ?")
         .run(agent.id);
+      logEvent(req.instance.id, 'error', 'Device login failed or expired — start again from the dashboard');
     }
   }
   const list = Array.isArray(req.body.agents) ? req.body.agents : [];

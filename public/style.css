@@ -65,6 +65,17 @@ details { margin-top: 14px; }
 }
 #balance-banner.danger { border-color: var(--red); color: var(--red); background: rgba(248,81,73,.08); }
 #balance-banner a { color: inherit; font-weight: 600; }
+.det-grid {
+  display: grid; grid-template-columns: auto 1fr; gap: 4px 16px;
+  font-size: 13px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 16px;
+}
+.det-grid .k { color: var(--muted); }
+.timeline { max-height: 45vh; overflow-y: auto; font-size: 13px; }
+.tl-row { display: flex; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+.tl-row:last-child { border-bottom: none; }
+.tl-time { color: var(--muted); white-space: nowrap; font: 11px/1.6 ui-monospace, monospace; }
+.tl-row.err .tl-msg { color: var(--red); }
 .code-display {
   font: 700 26px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
   text-align: center; letter-spacing: 2px; color: var(--accent);

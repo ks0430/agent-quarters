@@ -8,6 +8,7 @@ import hostRoutes from './routes-host.js';
 import billingRoutes, { handleStripeWebhook } from './routes-billing.js';
 import { startBilling } from './billing.js';
 import { getProvider } from './provider.js';
+import { logEvent } from './events.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
@@ -74,10 +75,16 @@ async function pollInstances() {
         const info = await provider.getInstance(inst.name, inst.region);
         if (info.state !== 'running') continue;
         let ip = info.publicIp;
+        logEvent(inst.id, 'vm', `Virtual machine is ${inst.state === 'resuming' ? 'restored and ' : ''}running (${ip})`);
         try {
-          ip = (await attachStaticIpIfWanted(inst)) || ip;
+          const staticIp = await attachStaticIpIfWanted(inst);
+          if (staticIp) {
+            ip = staticIp;
+            logEvent(inst.id, 'ip', `Static IP ${staticIp} ${inst.state === 'resuming' ? 're-' : ''}attached`);
+          }
         } catch (err) {
           console.error(`static ip ${inst.name}:`, err.message || err);
+          logEvent(inst.id, 'error', `Static IP attach failed: ${String(err.message || err).slice(0, 150)}`);
         }
         db.prepare("UPDATE instances SET state = 'bootstrapping', public_ip = ? WHERE id = ?")
           .run(ip, inst.id);
@@ -86,6 +93,7 @@ async function pollInstances() {
           try {
             await provider.deleteSnapshot(inst.snapshot_name, inst.region);
             db.prepare('UPDATE instances SET snapshot_name = NULL WHERE id = ?').run(inst.id);
+            logEvent(inst.id, 'snapshot', 'Snapshot deleted after successful restore');
           } catch (err) {
             console.error(`snapshot cleanup ${inst.snapshot_name}:`, err.message || err);
           }
@@ -93,14 +101,17 @@ async function pollInstances() {
       } else if (inst.state === 'pausing') {
         const snapState = await provider.getSnapshotState(inst.snapshot_name, inst.region);
         if (snapState === 'available') {
+          logEvent(inst.id, 'snapshot', 'Snapshot completed — shutting the server down');
           await provider.deleteInstance(inst.name, inst.region);
           db.prepare("UPDATE instances SET state = 'paused', paused_at = datetime('now'), public_ip = NULL WHERE id = ?")
             .run(inst.id);
           db.prepare("UPDATE agents SET status = 'paused' WHERE instance_id = ? AND status != 'deleted'").run(inst.id);
           console.log(`paused ${inst.name}`);
+          logEvent(inst.id, 'pause', `Server paused — billing dropped to the paused rate${inst.static_ip_name ? '; static IP reserved' : ''}`);
         } else if (snapState === 'error') {
           db.prepare("UPDATE instances SET state = 'ready', error = 'snapshot failed - pause aborted', snapshot_name = NULL WHERE id = ?")
             .run(inst.id);
+          logEvent(inst.id, 'error', 'Snapshot failed — pause aborted, server still running');
         }
       }
     } catch (err) {

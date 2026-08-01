@@ -72,6 +72,15 @@ async function writeAgentFiles(name, configToml, env) {
     '- To send an IMAGE (renders inline): `cc-connect send --image /absolute/path.png`',
     '- Audio/video: `cc-connect send --audio x.mp3` / `cc-connect send --video x.mp4`',
     '- You can repeat --file/--image flags to send several attachments at once.', '',
+    '# Installing tools — persistence rules', '',
+    'Only your home directory (/home/agent) survives restarts, backups, and',
+    'container recreations. System-level installs are wiped without warning.', '',
+    '- PREFER user-space installs: `pip install --user`, virtualenvs inside the',
+    '  workspace, `npm install` in a project dir, or `npm install -g --prefix ~/.local`',
+    '  (~/.local/bin is worth adding to PATH in ~/.bashrc).',
+    '- AVOID relying on `apt install` / global system packages: they vanish on the',
+    '  next restart. If you must apt-install something, also append the install',
+    '  command to ~/workspace/setup.sh so it can be re-run after a restart.', '',
   ].join('\n');
   for (const f of ['AGENTS.md', 'CLAUDE.md']) {
     const p = path.join(home, 'workspace', f);

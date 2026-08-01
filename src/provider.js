@@ -82,7 +82,13 @@ const lightsail = {
   },
 
   // --- static IPs ---
+  // Idempotent: on resume the IP already exists (parked) — reuse it.
+  // Allocating an existing name errors with "Some names are already in use".
   async allocateStaticIp(ipName, region) {
+    try {
+      const existing = await client(region).send(new GetStaticIpCommand({ staticIpName: ipName }));
+      if (existing.staticIp?.ipAddress) return existing.staticIp.ipAddress;
+    } catch { /* not found — allocate fresh below */ }
     await client(region).send(new AllocateStaticIpCommand({ staticIpName: ipName }));
     const r = await client(region).send(new GetStaticIpCommand({ staticIpName: ipName }));
     return r.staticIp?.ipAddress || null;

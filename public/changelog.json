@@ -1,0 +1,20 @@
+[
+  { "date": "2026-08-01", "type": "feature", "title": "Server activity timeline", "detail": "New Details button on every server card: server info plus a live step-by-step log of everything that happened (deploys, logins, pause/resume, errors)." },
+  { "date": "2026-08-01", "type": "feature", "title": "Pause & resume servers", "detail": "Pause snapshots your server and shuts it down (~$1/mo instead of ~$18/mo). Resume restores it in ~3 minutes with workspace, logins and connections intact." },
+  { "date": "2026-08-01", "type": "feature", "title": "Static IP option", "detail": "New deploy checkbox: keep the same IP address for the server's lifetime — survives pause/resume. +$2/mo." },
+  { "date": "2026-08-01", "type": "fix", "title": "Static IP correctly re-attaches after resume", "detail": "Resumed servers briefly came back on a new address while the dashboard showed the pinned one." },
+  { "date": "2026-08-01", "type": "improvement", "title": "Agents learn persistence rules", "detail": "New agents are told to prefer user-space installs (pip --user, venvs) so their tools survive restarts and backups." },
+  { "date": "2026-07-31", "type": "feature", "title": "Prepaid billing", "detail": "Credit wallet with Stripe top-ups ($10/$25/$50), transparent hourly server billing ($0.60/day), Multi plan ($9/mo, up to 5 servers), full transaction history in Settings." },
+  { "date": "2026-07-31", "type": "feature", "title": "Usage & cost dashboards", "detail": "Settings shows each server's hours and costs; balance banner warns before credits run out." },
+  { "date": "2026-07-31", "type": "feature", "title": "Slack integration, polished", "detail": "One-click pre-configured Slack app creation (pick your bot's name), native slash commands (/model, /mode, /new…), @mentions in channels, image & file exchange." },
+  { "date": "2026-07-31", "type": "fix", "title": "No more duplicate Slack replies", "detail": "Channel mentions were processed twice (and the bot could answer itself). Event subscriptions corrected." },
+  { "date": "2026-07-31", "type": "fix", "title": "Connecting a platform no longer asks for an API key", "detail": "Subscription-login agents were wrongly prompted for a key when adding Slack/Telegram." },
+  { "date": "2026-07-31", "type": "improvement", "title": "Agents know how to send files to chat", "detail": "Workspaces are seeded with instructions for delivering files/images back to Slack or Telegram — no more invented excuses." },
+  { "date": "2026-07-31", "type": "improvement", "title": "Full autonomy by default", "detail": "Agents default to full-autonomy mode: each runs in an isolated container (that is the sandbox), and restricted modes caused confusing refusals." },
+  { "date": "2026-07-30", "type": "feature", "title": "ChatGPT subscription login for Codex", "detail": "Guided device-code login: open a link, enter the one-time code, done — no API key needed." },
+  { "date": "2026-07-30", "type": "feature", "title": "Claude subscription login", "detail": "Log in to Claude Code on your server with your Claude subscription via a guided OAuth flow — no API key needed." },
+  { "date": "2026-07-30", "type": "feature", "title": "Two-step deploy flow", "detail": "Deploy a server with just a region pick; choose Claude Code or Codex and how to sign in once it's ready." },
+  { "date": "2026-07-30", "type": "improvement", "title": "Deploys are ~5x faster", "detail": "Servers pull a prebuilt agent image instead of compiling everything — setup dropped from up to 15 minutes to ~2–3." },
+  { "date": "2026-07-30", "type": "fix", "title": "Reliable first-boot setup", "detail": "Server setup could silently fail racing system updates at first boot; now it retries, and any failure is reported on the server card." },
+  { "date": "2026-07-30", "type": "feature", "title": "AgentQuarters launches 🎉", "detail": "Deploy an always-on AI coding agent (Claude Code or Codex) to your own cloud server in minutes, and chat with it from Telegram or Slack." }
+]

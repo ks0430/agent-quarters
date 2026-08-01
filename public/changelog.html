@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What's new — AgentDeploy</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .cl { max-width: 760px; margin: 30px auto; padding: 0 24px; }
+  .cl-date { color: var(--muted); font-size: 13px; margin: 26px 0 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .cl-item { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; }
+  .cl-item h4 { margin: 0 0 4px; font-size: 15px; }
+  .cl-item p { margin: 0; color: var(--muted); font-size: 14px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-right: 8px; vertical-align: middle; }
+  .badge.feature { background: rgba(63,185,80,.15); color: var(--green); }
+  .badge.fix { background: rgba(248,81,73,.15); color: var(--red); }
+  .badge.improvement { background: rgba(79,140,255,.15); color: var(--accent); }
+</style>
+</head>
+<body>
+<header><div class="brand">⚡ AgentDeploy — what's new</div><a class="btn ghost" href="/">← Dashboard</a></header>
+<section class="cl" id="list">loading…</section>
+<script>
+fetch('/changelog.json').then((r) => r.json()).then((entries) => {
+  const fmt = (d) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  let html = ''; let lastDate = '';
+  for (const e of entries) {
+    if (e.date !== lastDate) { html += `<div class="cl-date">${fmt(e.date)}</div>`; lastDate = e.date; }
+    html += `<div class="cl-item"><h4><span class="badge ${e.type}">${e.type}</span>${e.title}</h4>
+      ${e.detail ? `<p>${e.detail}</p>` : ''}</div>`;
+  }
+  document.getElementById('list').innerHTML = html || '<p class="muted">Nothing yet.</p>';
+});
+</script>
+</body>
+</html>

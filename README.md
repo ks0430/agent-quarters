@@ -1,8 +1,27 @@
-# AgentDeploy
+# AgentDeploy (AgentQuarters)
 
-One-click deployment of always-on AI coding agents. Users pick an AWS region,
-paste an API key, and get a private cloud server running **Claude Code** or
-**Codex**, bridged to Slack/Telegram via [cc-connect](https://github.com/chenhg5/cc-connect).
+One-click deployment of always-on AI coding agents: pick a region, get a
+private cloud server running **Claude Code** or **Codex**, sign in with your
+existing **Claude/ChatGPT subscription** (no API key needed), and chat with
+your agent from **Slack or Telegram** via
+[cc-connect](https://github.com/chenhg5/cc-connect).
+
+**Live**: https://agentdeploy-nino.onrender.com · **Changelog**: /changelog.html
+
+## Current feature set
+
+- Two-step deploy: region-only server creation, then agent setup (Claude
+  Code or Codex; subscription login relays or API key)
+- Slack (one-click pre-configured app, slash commands, files/images) and
+  Telegram integrations, connectable/editable from the dashboard
+- Prepaid billing: Stripe top-ups, 2.5c/hr per running server, Multi plan
+  ($9/mo, 5 servers), low-balance protection with 48h grace
+- Pause/resume via snapshots (~$1/mo paused) with optional static IP
+  (+$2/mo, survives pause/resume)
+- Per-server Details panel with a full activity timeline; usage/cost
+  dashboards for users (Settings) and operator (/admin.html)
+- Agents run in isolated per-agent Docker containers with resource caps,
+  seeded with workspace guides (file delivery, install persistence)
 
 ## Architecture
 
@@ -96,12 +115,22 @@ queued `create-agent` command → container starts → heartbeats every 15s
 - Bootstrap logs on instances: `/var/log/agentdeploy-bootstrap.log`;
   host-agent logs: `journalctl -u agentdeploy-host`.
 
-## Roadmap (from the business plan)
+## Development log
 
-- [ ] Stripe subscriptions ($19 shared / $39 dedicated)
-- [ ] `claude setup-token` device-flow relay (subscription login, no API key)
-- [ ] Multi-agent packing (3 per 4GB instance) — host-agent already supports
-      multiple containers; needs scheduler + `medium_3_0` bundles
-- [ ] Hetzner provider adapter (~4× cheaper)
-- [ ] Encrypt secrets at rest; email verification; usage dashboards
-```
+User-visible changes are tracked in `public/changelog.json` and rendered at
+`/changelog.html` ("What's new" in the dashboard header). **Every feature or
+fix commit must add an entry** — see CLAUDE.md for the format and rules.
+
+## Roadmap
+
+- [x] Subscription login relays (Claude OAuth + Codex device auth)
+- [x] Prepaid billing (wallet, Stripe Checkout, Multi plan)
+- [x] Pause/resume via snapshots + static IP add-on
+- [ ] Host-agent self-update (docs/plan-host-agent-self-update.md)
+- [ ] Multi-agent packing (N containers per instance — host-agent ready)
+- [ ] Resize servers (restore snapshot to a bigger bundle; per-bundle rates)
+- [ ] Custom agent images (user-declared packages baked in)
+- [ ] Portable agent backups (home-dir tar to object storage; cross-provider)
+- [ ] Hetzner provider adapter (~4× infra margin)
+- [ ] Encrypt secrets at rest; orphan-resource janitor; custom domain;
+      Stripe live mode

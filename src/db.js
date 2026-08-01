@@ -79,6 +79,10 @@ if (!userCols.includes('stripe_customer_id')) db.exec('ALTER TABLE users ADD COL
 if (!userCols.includes('negative_since')) db.exec('ALTER TABLE users ADD COLUMN negative_since TEXT');
 const instCols = db.prepare('PRAGMA table_info(instances)').all().map((c) => c.name);
 if (!instCols.includes('last_billed_at')) db.exec('ALTER TABLE instances ADD COLUMN last_billed_at TEXT');
+if (!instCols.includes('static_ip_name')) db.exec('ALTER TABLE instances ADD COLUMN static_ip_name TEXT');
+if (!instCols.includes('static_ip')) db.exec('ALTER TABLE instances ADD COLUMN static_ip TEXT');
+if (!instCols.includes('snapshot_name')) db.exec('ALTER TABLE instances ADD COLUMN snapshot_name TEXT');
+if (!instCols.includes('paused_at')) db.exec('ALTER TABLE instances ADD COLUMN paused_at TEXT');
 if (!instCols.includes('deleted_at')) {
   db.exec('ALTER TABLE instances ADD COLUMN deleted_at TEXT');
   // Backfill: pre-migration deleted rows have no lifetime record; treating

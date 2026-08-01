@@ -65,6 +65,12 @@
 
     <label>Region <select id="d-region"></select></label>
 
+    <label style="display:flex;gap:8px;align-items:center;margin-top:14px">
+      <input type="checkbox" id="d-staticip" style="width:auto;margin:0">
+      <span>Keep the same IP address for this server's lifetime
+        <small style="display:block">Static IP survives pause/resume — needed if you allowlist the agent's IP anywhere. +$2/mo</small></span>
+    </label>
+
     <div class="err" id="deploy-error"></div>
     <div class="row">
       <button class="btn ghost" type="button" id="deploy-cancel">Cancel</button>

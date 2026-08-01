@@ -95,6 +95,9 @@ function statusPill(inst, agent) {
   const mk = (cls, label) => `<span class="pill ${cls}"><span class="dot"></span>${label}</span>`;
   if (inst.state === 'provisioning') return mk('busy', 'Creating server…');
   if (inst.state === 'bootstrapping') return mk('busy', 'Installing software…');
+  if (inst.state === 'pausing') return mk('busy', 'Pausing (snapshotting)…');
+  if (inst.state === 'paused') return mk('warn', 'Paused — ~$1/mo');
+  if (inst.state === 'resuming') return mk('busy', 'Resuming…');
   if (inst.state === 'error') return mk('bad', 'Server error');
   if (!agent) return mk('warn', 'Ready — set up your agent');
   if (agent.status === 'pending') return mk('busy', 'Starting agent…');
@@ -149,7 +152,7 @@ async function refresh() {
         <div>
           <div class="agent-name">${agent ? agent.name : inst.name}</div>
           <div class="agent-meta">${typeLabel}${agent && agent.model ? ` (${agent.model})` : ''}${platform}
-            · ${regionLabel(inst.region)}${inst.public_ip ? ` · ${inst.public_ip}` : ''}</div>
+            · ${regionLabel(inst.region)}${inst.static_ip ? ` · 📌 ${inst.static_ip}` : (inst.public_ip ? ` · ${inst.public_ip}` : '')}</div>
         </div>
         ${statusPill(inst, agent)}
       </div>
@@ -166,6 +169,10 @@ async function refresh() {
             data-auth="${agent.auth_method}" data-name="${agent.name}">${connectLabel}</button>
           <button class="btn" data-act="logs" data-id="${agent.id}" data-name="${agent.name}">Logs</button>
           <button class="btn" data-act="restart" data-id="${agent.id}">Restart</button>` : ''}
+        ${inst.state === 'ready' ? `
+          <button class="btn" data-act="pause" data-id="${inst.id}" data-name="${inst.name}">Pause</button>` : ''}
+        ${inst.state === 'paused' ? `
+          <button class="btn primary" data-act="resume" data-id="${inst.id}">Resume</button>` : ''}
         <button class="btn ghost danger" data-act="delete" data-id="${inst.id}" data-name="${inst.name}">Delete</button>
       </div>
     </div>`;
@@ -193,6 +200,16 @@ async function onAction(btn) {
       openLogin(btn.dataset.id, btn.dataset.type);
     } else if (act === 'setup') {
       openSetup(btn.dataset.id);
+    } else if (act === 'pause') {
+      if (confirm(`Pause ${btn.dataset.name}? The server is snapshotted and shut down (~$1/mo instead of ~$18/mo). Your agent, logins and files are preserved; resume anytime in ~3 minutes.`)) {
+        btn.disabled = true;
+        await api('POST', `/instances/${btn.dataset.id}/pause`);
+        refresh();
+      }
+    } else if (act === 'resume') {
+      btn.disabled = true;
+      await api('POST', `/instances/${btn.dataset.id}/resume`);
+      refresh();
     } else if (act === 'delete') {
       if (confirm(`Delete ${btn.dataset.name} and its server? This cannot be undone.`)) {
         await api('DELETE', `/instances/${id}`);
@@ -316,7 +333,7 @@ $('deploy-form').onsubmit = async (e) => {
   $('deploy-error').textContent = '';
   $('deploy-submit').disabled = true;
   try {
-    await api('POST', '/deploy', { region: $('d-region').value });
+    await api('POST', '/deploy', { region: $('d-region').value, staticIp: $('d-staticip').checked });
     $('deploy-modal').close();
     refresh();
   } catch (err) {

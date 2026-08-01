@@ -20,9 +20,13 @@ function hostAuth(req, res, next) {
 router.use(hostAuth);
 
 // First call after bootstrap: instance is fully set up and polling.
+// During resume the poller still owes static-IP reattachment, so let it
+// finish (the heartbeat below completes the -> ready transition instead).
 router.post('/register', (req, res) => {
   console.log(`host registered: ${req.instance.name} (instance ${req.instance.id})`);
-  db.prepare("UPDATE instances SET state = 'ready' WHERE id = ?").run(req.instance.id);
+  if (!['resuming', 'pausing'].includes(req.instance.state)) {
+    db.prepare("UPDATE instances SET state = 'ready' WHERE id = ?").run(req.instance.id);
+  }
   res.json({ ok: true, pollSeconds: 5, statusSeconds: 15 });
 });
 
@@ -91,6 +95,11 @@ router.post('/bootstrap-error', (req, res) => {
 // Also carries async login-session outcomes (codex device auth completes on
 // its own when the user approves, with no further command round-trip).
 router.post('/status', (req, res) => {
+  // A heartbeat proves the host is alive — complete any pending transition
+  // (e.g. resume flows where registration raced the static-IP reattach).
+  if (req.instance.state === 'bootstrapping') {
+    db.prepare("UPDATE instances SET state = 'ready' WHERE id = ?").run(req.instance.id);
+  }
   for (const l of Array.isArray(req.body.logins) ? req.body.logins : []) {
     const agent = db.prepare('SELECT * FROM agents WHERE instance_id = ? AND name = ?')
       .get(req.instance.id, String(l.name || ''));

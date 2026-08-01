@@ -9,7 +9,9 @@ import {
 } from './auth.js';
 import { generateConfig, generateEnv, validateAgentSpec } from './configgen.js';
 import { instanceUsage } from './usage.js';
-import { chargeInstance, MIN_DEPLOY_BALANCE_CENTS, RATE_CENTS_HOUR } from './billing.js';
+import {
+  chargeInstance, teardownInstance, MIN_DEPLOY_BALANCE_CENTS, RATE_CENTS_HOUR,
+} from './billing.js';
 import { getProvider, REGIONS } from './provider.js';
 import { buildUserData } from './bootstrap.js';
 
@@ -92,8 +94,12 @@ router.post('/deploy', requireUser, async (req, res) => {
   const hostToken = crypto.randomBytes(32).toString('hex');
   const userData = buildUserData({ baseUrl: process.env.BASE_URL || 'http://localhost:3000', hostToken });
 
-  const instInfo = db.prepare(`INSERT INTO instances (user_id, name, region, bundle, host_token)
-    VALUES (?, ?, ?, ?, ?)`).run(req.user.id, instanceName, region, BUNDLE_ID, hostToken);
+  // Static IP opt-in: record intent now; the poller allocates+attaches once
+  // the VM is running (Lightsail can't attach at create time).
+  const staticIpName = req.body.staticIp ? `ip-${instanceName}` : null;
+
+  const instInfo = db.prepare(`INSERT INTO instances (user_id, name, region, bundle, host_token, static_ip_name)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(req.user.id, instanceName, region, BUNDLE_ID, hostToken, staticIpName);
   const instanceId = instInfo.lastInsertRowid;
 
   try {
@@ -168,7 +174,7 @@ function ownedAgent(req, res) {
 
 router.get('/instances', requireUser, (req, res) => {
   const instances = db.prepare(
-    "SELECT id, name, region, bundle, state, public_ip, last_seen, error, created_at FROM instances WHERE user_id = ? AND state != 'deleted' ORDER BY id DESC"
+    "SELECT id, name, region, bundle, state, public_ip, static_ip, static_ip_name, paused_at, last_seen, error, created_at FROM instances WHERE user_id = ? AND state != 'deleted' ORDER BY id DESC"
   ).all(req.user.id);
   const agentsFor = db.prepare(
     "SELECT id, name, agent_type, model, platform, status, auth_method, login_state, created_at FROM agents WHERE instance_id = ? AND status != 'deleted'"
@@ -255,15 +261,50 @@ router.get('/agents/:id/logs', requireUser, (req, res) => {
 router.delete('/instances/:id', requireUser, async (req, res) => {
   const inst = ownedInstance(req, res);
   if (!inst) return;
-  try {
-    await getProvider().deleteInstance(inst.name, inst.region);
-  } catch (err) {
-    // Instance may already be gone on the provider side; proceed either way.
-    console.error(`deleteInstance ${inst.name}:`, err.message || err);
+  await teardownInstance(inst); // VM + snapshot + static IP, tolerant of absences
+  res.json({ ok: true });
+});
+
+// ---------- pause / resume (snapshot-based) ----------
+
+router.post('/instances/:id/pause', requireUser, async (req, res) => {
+  const inst = ownedInstance(req, res);
+  if (!inst) return;
+  if (inst.state !== 'ready') {
+    return res.status(400).json({ error: `can only pause a ready server (state: ${inst.state})` });
   }
-  try { chargeInstance(inst); } catch (err) { console.error('final charge:', err.message); }
-  db.prepare("UPDATE instances SET state = 'deleted', deleted_at = datetime('now') WHERE id = ?").run(inst.id);
-  db.prepare("UPDATE agents SET status = 'deleted' WHERE instance_id = ?").run(inst.id);
+  const snapshotName = `snap-${inst.name}`;
+  try { chargeInstance(inst); } catch (err) { console.error('pause charge:', err.message); }
+  try {
+    await getProvider().createSnapshot(inst.name, snapshotName, inst.region);
+  } catch (err) {
+    return res.status(502).json({ error: `snapshot failed: ${err.message || err}` });
+  }
+  db.prepare("UPDATE instances SET state = 'pausing', snapshot_name = ? WHERE id = ?")
+    .run(snapshotName, inst.id);
+  console.log(`pausing ${inst.name} (snapshot ${snapshotName})`);
+  res.json({ ok: true });
+});
+
+router.post('/instances/:id/resume', requireUser, async (req, res) => {
+  const inst = ownedInstance(req, res);
+  if (!inst) return;
+  if (inst.state !== 'paused') {
+    return res.status(400).json({ error: `server is not paused (state: ${inst.state})` });
+  }
+  const account = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (account.balance_cents < MIN_DEPLOY_BALANCE_CENTS) {
+    return res.status(402).json({ error: 'insufficient credits to resume — top up in Settings' });
+  }
+  try {
+    await getProvider().createFromSnapshot({
+      name: inst.name, region: inst.region, bundleId: inst.bundle, snapshotName: inst.snapshot_name,
+    });
+  } catch (err) {
+    return res.status(502).json({ error: `restore failed: ${err.message || err}` });
+  }
+  db.prepare("UPDATE instances SET state = 'resuming', paused_at = NULL WHERE id = ?").run(inst.id);
+  console.log(`resuming ${inst.name} from ${inst.snapshot_name}`);
   res.json({ ok: true });
 });
 

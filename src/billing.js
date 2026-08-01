@@ -8,6 +8,8 @@ import db from './db.js';
 import { getProvider } from './provider.js';
 
 export const RATE_CENTS_HOUR = parseFloat(process.env.USAGE_RATE_CENTS_HOUR || '2.5');
+export const PAUSED_RATE_CENTS_HOUR = parseFloat(process.env.PAUSED_RATE_CENTS_HOUR || '0.14'); // ~$1/mo
+export const STATIC_IP_RATE_CENTS_HOUR = parseFloat(process.env.STATIC_IP_RATE_CENTS_HOUR || '0.28'); // ~$2/mo
 export const MIN_DEPLOY_BALANCE_CENTS = RATE_CENTS_HOUR * 48; // 2 days of one server
 const GRACE_HOURS = 48;
 
@@ -42,15 +44,42 @@ export function applyLedger(userId, deltaCents, reason, ref = null) {
 }
 
 // Charge one instance for wall-clock time since it was last billed.
-// AWS bills us from creation to deletion regardless of state, so we do too.
+// Running servers burn the full rate; paused ones (snapshot only, no VM)
+// burn the paused rate; a static IP adds its rate in either state.
 export function chargeInstance(inst, now = new Date()) {
   if (inst.deleted_at) return;
   const from = parseUtc(inst.last_billed_at || inst.created_at);
   const hours = (now - from) / 3600000;
   if (hours < 0.01) return;
-  const cost = hours * RATE_CENTS_HOUR;
-  applyLedger(inst.user_id, -cost, `usage ${inst.name} (${hours.toFixed(2)}h)`);
+  const paused = inst.state === 'paused' || inst.state === 'pausing';
+  let rate = paused ? PAUSED_RATE_CENTS_HOUR : RATE_CENTS_HOUR;
+  if (inst.static_ip_name) rate += STATIC_IP_RATE_CENTS_HOUR;
+  const cost = hours * rate;
+  applyLedger(inst.user_id, -cost, `${paused ? 'paused' : 'usage'} ${inst.name} (${hours.toFixed(2)}h)`);
   db.prepare('UPDATE instances SET last_billed_at = ? WHERE id = ?').run(sqliteNow(now), inst.id);
+}
+
+// Full cleanup of everything an instance may own on the provider side:
+// the VM, its pause snapshot, and its static IP. Used by user deletes and
+// the unpaid-grace teardown; every step tolerates already-gone resources.
+export async function teardownInstance(inst) {
+  const provider = getProvider();
+  try { chargeInstance(inst); } catch (err) { console.error('final charge:', err.message); }
+  try { await provider.deleteInstance(inst.name, inst.region); } catch (err) {
+    console.error(`teardown vm ${inst.name}:`, err.message || err);
+  }
+  if (inst.snapshot_name) {
+    try { await provider.deleteSnapshot(inst.snapshot_name, inst.region); } catch (err) {
+      console.error(`teardown snapshot ${inst.snapshot_name}:`, err.message || err);
+    }
+  }
+  if (inst.static_ip_name) {
+    try { await provider.releaseStaticIp(inst.static_ip_name, inst.region); } catch (err) {
+      console.error(`teardown ip ${inst.static_ip_name}:`, err.message || err);
+    }
+  }
+  db.prepare("UPDATE instances SET state = 'deleted', deleted_at = datetime('now'), snapshot_name = NULL, static_ip_name = NULL WHERE id = ?").run(inst.id);
+  db.prepare("UPDATE agents SET status = 'deleted' WHERE instance_id = ?").run(inst.id);
 }
 
 async function enforceGrace(now = new Date()) {
@@ -74,13 +103,7 @@ async function enforceGrace(now = new Date()) {
     // Grace expired: tear down this user's servers to stop our AWS bleed.
     const instances = db.prepare("SELECT * FROM instances WHERE user_id = ? AND state != 'deleted'").all(u.id);
     for (const inst of instances) {
-      try {
-        await getProvider().deleteInstance(inst.name, inst.region);
-      } catch (err) {
-        console.error(`grace teardown ${inst.name}:`, err.message || err);
-      }
-      db.prepare("UPDATE instances SET state = 'deleted', deleted_at = datetime('now') WHERE id = ?").run(inst.id);
-      db.prepare("UPDATE agents SET status = 'deleted' WHERE instance_id = ?").run(inst.id);
+      await teardownInstance(inst);
       applyLedger(u.id, 0, `server ${inst.name} deleted: balance unpaid past ${GRACE_HOURS}h grace`);
       console.log(`grace: deleted ${inst.name} for ${u.email}`);
     }

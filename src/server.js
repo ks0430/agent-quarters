@@ -49,29 +49,71 @@ app.use(express.static(path.join(root, 'public'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
 }));
 
-// Background poller: move instances provisioning -> bootstrapping once the VM
-// is running (the final -> ready transition happens when host-agent registers).
-async function pollProvisioning() {
+// Background poller drives the instance state machine:
+//   provisioning/resuming -> (VM running, attach static IP) -> bootstrapping
+//   bootstrapping -> ready happens when the host-agent registers
+//   pausing -> (snapshot available, delete VM) -> paused
+async function attachStaticIpIfWanted(inst) {
+  if (!inst.static_ip_name) return null;
+  const provider = getProvider();
+  const ip = await provider.allocateStaticIp(inst.static_ip_name, inst.region); // idempotent-ish: reuse if exists
+  await provider.attachStaticIp(inst.static_ip_name, inst.name, inst.region);
+  db.prepare('UPDATE instances SET static_ip = ?, public_ip = ? WHERE id = ?').run(ip, ip, inst.id);
+  return ip;
+}
+
+async function pollInstances() {
+  const provider = getProvider();
   const rows = db.prepare(
-    "SELECT * FROM instances WHERE state = 'provisioning' AND created_at > datetime('now', '-1 hour')"
+    "SELECT * FROM instances WHERE state IN ('provisioning', 'resuming', 'pausing')"
   ).all();
+
   for (const inst of rows) {
     try {
-      const info = await getProvider().getInstance(inst.name, inst.region);
-      if (info.state === 'running') {
+      if (inst.state === 'provisioning' || inst.state === 'resuming') {
+        const info = await provider.getInstance(inst.name, inst.region);
+        if (info.state !== 'running') continue;
+        let ip = info.publicIp;
+        try {
+          ip = (await attachStaticIpIfWanted(inst)) || ip;
+        } catch (err) {
+          console.error(`static ip ${inst.name}:`, err.message || err);
+        }
         db.prepare("UPDATE instances SET state = 'bootstrapping', public_ip = ? WHERE id = ?")
-          .run(info.publicIp, inst.id);
+          .run(ip, inst.id);
+        if (inst.state === 'resuming' && inst.snapshot_name) {
+          // VM restored fine — the snapshot has served its purpose.
+          try {
+            await provider.deleteSnapshot(inst.snapshot_name, inst.region);
+            db.prepare('UPDATE instances SET snapshot_name = NULL WHERE id = ?').run(inst.id);
+          } catch (err) {
+            console.error(`snapshot cleanup ${inst.snapshot_name}:`, err.message || err);
+          }
+        }
+      } else if (inst.state === 'pausing') {
+        const snapState = await provider.getSnapshotState(inst.snapshot_name, inst.region);
+        if (snapState === 'available') {
+          await provider.deleteInstance(inst.name, inst.region);
+          db.prepare("UPDATE instances SET state = 'paused', paused_at = datetime('now'), public_ip = NULL WHERE id = ?")
+            .run(inst.id);
+          db.prepare("UPDATE agents SET status = 'paused' WHERE instance_id = ? AND status != 'deleted'").run(inst.id);
+          console.log(`paused ${inst.name}`);
+        } else if (snapState === 'error') {
+          db.prepare("UPDATE instances SET state = 'ready', error = 'snapshot failed - pause aborted', snapshot_name = NULL WHERE id = ?")
+            .run(inst.id);
+        }
       }
     } catch (err) {
-      console.error(`poll ${inst.name}:`, err.message || err);
+      console.error(`poll ${inst.name} (${inst.state}):`, err.message || err);
     }
   }
+
   // Anything provisioning for >1h without progress is stuck.
   db.prepare(
     "UPDATE instances SET state = 'error', error = 'provisioning timed out' WHERE state = 'provisioning' AND created_at <= datetime('now', '-1 hour')"
   ).run();
 }
-setInterval(pollProvisioning, 20000);
+setInterval(pollInstances, 20000);
 if (!process.env.DISABLE_BILLING_CRON) startBilling();
 
 const port = parseInt(process.env.PORT || '3000', 10);

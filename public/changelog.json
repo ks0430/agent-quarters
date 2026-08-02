@@ -1,4 +1,5 @@
 [
+  { "date": "2026-08-02", "type": "improvement", "title": "Servers auto-update in the background", "detail": "Running servers now receive platform improvements automatically, without redeploying — new capabilities reach your existing agents on their own." },
   { "date": "2026-08-01", "type": "feature", "title": "Server activity timeline", "detail": "New Details button on every server card: server info plus a live step-by-step log of everything that happened (deploys, logins, pause/resume, errors)." },
   { "date": "2026-08-01", "type": "feature", "title": "Pause & resume servers", "detail": "Pause snapshots your server and shuts it down (~$1/mo instead of ~$18/mo). Resume restores it in ~3 minutes with workspace, logins and connections intact." },
   { "date": "2026-08-01", "type": "feature", "title": "Static IP option", "detail": "New deploy checkbox: keep the same IP address for the server's lifetime — survives pause/resume. +$2/mo." },

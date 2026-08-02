@@ -1,11 +1,27 @@
 // API used by the host-agent daemon running on each instance.
 // Auth: Bearer <host_token> (unique per instance, minted at deploy time).
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
 import db from './db.js';
 import { logEvent } from './events.js';
 
 const router = Router();
+
+// The version we serve at /dist/host-agent.js — read once at boot so we can
+// tell older host-agents to self-update. Disabled via env kill-switch.
+const HOST_AGENT_VERSION = (() => {
+  if (process.env.HOST_AGENT_AUTOUPDATE === '0') return 0;
+  try {
+    const src = fs.readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'host-agent', 'host-agent.js'), 'utf8');
+    return parseInt((src.match(/const VERSION = (\d+)/) || [])[1] || '0', 10);
+  } catch { return 0; }
+})();
+console.log(`host-agent version served: ${HOST_AGENT_VERSION || '(auto-update disabled)'}`);
+const updatePayload = () => (HOST_AGENT_VERSION ? { hostAgentVersion: HOST_AGENT_VERSION } : {});
 
 function hostAuth(req, res, next) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -31,7 +47,7 @@ router.post('/register', (req, res) => {
   if (req.instance.state !== 'ready') {
     logEvent(req.instance.id, 'ready', 'Server software online — host connected to the control plane');
   }
-  res.json({ ok: true, pollSeconds: 5, statusSeconds: 15 });
+  res.json({ ok: true, pollSeconds: 5, statusSeconds: 15, ...updatePayload() });
 });
 
 // Host pulls pending commands; they are marked sent so they run once.
@@ -137,7 +153,7 @@ router.post('/status', (req, res) => {
       : a.state === 'missing' ? 'error' : String(a.state || 'unknown').slice(0, 20);
     set.run(status, String(a.logs || '').slice(0, 8192), agent.id);
   }
-  res.json({ ok: true });
+  res.json({ ok: true, ...updatePayload() });
 });
 
 export default router;

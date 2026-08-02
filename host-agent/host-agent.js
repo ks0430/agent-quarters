@@ -10,10 +10,13 @@ const { execFile, spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
+const VERSION = 2; // bump on every host-agent change — drives self-update
+
 const CP_URL = process.env.CP_URL;
 const HOST_TOKEN = process.env.HOST_TOKEN;
 const AGENTS_DIR = '/opt/agents';
 const AGENT_UID = '1001'; // "agent" user inside the container image
+const SELF_PATH = process.argv[1]; // /opt/agentdeploy/host-agent.js in prod
 
 if (!CP_URL || !HOST_TOKEN) {
   console.error('CP_URL and HOST_TOKEN are required');
@@ -283,15 +286,52 @@ async function reportStatus() {
     logins.delete(name);
   }
 
-  await api('POST', '/host/status', { agents, logins: loginResults });
+  return api('POST', '/host/status', { agents, logins: loginResults });
+}
+
+// ---- self-update ----
+// The control plane advertises its current host-agent version in register
+// and status responses. When newer: download -> validate -> backup -> atomic
+// swap -> clean exit; systemd (Restart=always) brings us back on new code.
+let updating = false;
+async function selfUpdate(newVersion) {
+  if (updating) return;
+  updating = true;
+  try {
+    // Never interrupt an in-flight login relay; retry on a later heartbeat.
+    if ([...logins.values()].some((s) => !s.exited)) { updating = false; return; }
+    console.log(`self-update: v${VERSION} -> v${newVersion}, downloading`);
+    const res = await fetch(`${CP_URL}/dist/host-agent.js`);
+    if (!res.ok) throw new Error(`download HTTP ${res.status}`);
+    const code = await res.text();
+    if (!code.includes('const VERSION')) throw new Error('downloaded file missing version stamp');
+    // Temp file keeps the .js extension so `node --check` can parse it as ESM.
+    const tmp = SELF_PATH.replace(/\.js$/, '') + '.new.js';
+    await fs.writeFile(tmp, code);
+    const check = await run('node', ['--check', tmp]);
+    if (!check.ok) { await fs.rm(tmp, { force: true }); throw new Error(`validation failed: ${check.stderr.slice(0, 200)}`); }
+    await fs.copyFile(SELF_PATH, `${SELF_PATH}.bak`).catch(() => {});
+    await fs.rename(tmp, SELF_PATH);
+    console.log('self-update installed — restarting');
+    process.exit(0);
+  } catch (err) {
+    console.error('self-update failed (keeping current version):', err.message);
+    updating = false;
+  }
+}
+
+function maybeUpdate(resp) {
+  const v = Number(resp && resp.hostAgentVersion);
+  if (v && v > VERSION) selfUpdate(v).catch((e) => console.error('self-update:', e.message));
 }
 
 async function main() {
   // Register with retry — the control plane must learn we're alive.
   for (;;) {
     try {
-      await api('POST', '/host/register', { version: 1 });
-      console.log('registered with control plane');
+      const resp = await api('POST', '/host/register', { version: VERSION });
+      console.log(`registered with control plane (host-agent v${VERSION})`);
+      maybeUpdate(resp);
       break;
     } catch (err) {
       console.error('register failed, retrying in 10s:', err.message);
@@ -303,7 +343,7 @@ async function main() {
   for (;;) {
     try { await pollCommands(); } catch (err) { console.error('poll:', err.message); }
     if (tick % 3 === 0) {
-      try { await reportStatus(); } catch (err) { console.error('status:', err.message); }
+      try { maybeUpdate(await reportStatus()); } catch (err) { console.error('status:', err.message); }
     }
     tick += 1;
     await new Promise((r) => setTimeout(r, 5000));

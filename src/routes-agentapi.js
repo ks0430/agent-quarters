@@ -40,15 +40,21 @@ router.post('/agents/:id/messages', apiKeyAuth, (req, res) => {
   const content = String(req.body.message || '').trim();
   if (!content) return res.status(400).json({ error: 'message is required' });
   if (content.length > 32000) return res.status(400).json({ error: 'message too long (max 32000 chars)' });
-  const session = String(req.body.session || 'default').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 60) || 'default';
   const stream = req.body.stream === true || req.query.stream === 'true';
+  // stateless=true: each call is fully isolated in a throwaway session that is
+  // deleted after replying (no memory, no accumulation). Otherwise the named
+  // session persists and accumulates context across calls.
+  const stateless = req.body.stateless === true;
+  const session = stateless
+    ? `eph-${crypto.randomBytes(6).toString('hex')}`
+    : (String(req.body.session || 'default').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 60) || 'default');
   const sessionKey = `api:${session}:${a.id}`;
   // Optional per-request model / reasoning switch (agent-wide, applied before
   // the message). Whitelisted charset since it becomes a slash command.
   const model = req.body.model ? String(req.body.model).replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 60) : null;
   const reasoning = ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(req.body.reasoning) ? req.body.reasoning : null;
 
-  const payload = { bridgeToken: a.bridge_token, sessionKey, content, stream, model, reasoning };
+  const payload = { bridgeToken: a.bridge_token, sessionKey, content, stream, model, reasoning, cleanup: stateless };
   const started = Date.now();
 
   if (stream) {

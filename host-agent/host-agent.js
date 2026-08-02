@@ -12,7 +12,7 @@ const path = require('node:path');
 const net = require('node:net');
 const crypto = require('node:crypto');
 
-const VERSION = 4; // bump on every host-agent change — drives self-update
+const VERSION = 5; // bump on every host-agent change — drives self-update
 const BRIDGE_PORT = 9810; // localhost port the agent container publishes its bridge on
 
 const CP_URL = process.env.CP_URL;
@@ -451,6 +451,17 @@ async function handleApiRequest(reqObj) {
     await post({ done: true, content: reply ? reply.content : '' });
   } catch (err) {
     await post({ done: true, error: String(err.message || err).slice(0, 300) });
+  } finally {
+    // Stateless request: delete the throwaway session so nothing accumulates.
+    if (reqObj.cleanup) {
+      try {
+        const base = `http://127.0.0.1:${BRIDGE_PORT}/bridge/sessions`;
+        const auth = { headers: { Authorization: `Bearer ${bridgeToken}` } };
+        const list = await fetch(`${base}?session_key=${encodeURIComponent(sessionKey)}`, auth).then((r) => r.json());
+        const sid = list?.data?.sessions?.[0]?.id;
+        if (sid) await fetch(`${base}/${sid}?session_key=${encodeURIComponent(sessionKey)}`, { method: 'DELETE', ...auth });
+      } catch { /* best-effort cleanup; idle-reset would collect it anyway */ }
+    }
   }
 }
 

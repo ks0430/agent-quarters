@@ -1,4 +1,5 @@
 [
+  { "date": "2026-08-02", "type": "improvement", "title": "Stateless API calls", "detail": "Add \"stateless\": true to an API request for a fully isolated, no-memory call — a throwaway session is used and deleted automatically. Named sessions still persist context across calls as before." },
   { "date": "2026-08-02", "type": "improvement", "title": "Pick model & reasoning per API call", "detail": "The Agent API now accepts optional \"model\" and \"reasoning\" fields — switch to a cheaper/faster model (or lighter reasoning) for a request without a separate switch call." },
   { "date": "2026-08-02", "type": "feature", "title": "Agent API", "detail": "Call your agent over HTTP from scripts, CI, or other apps. Enable API access on any agent, create a key, and POST messages to it (sync or streaming) — the same Claude Code or Codex agent, driven by an API key instead of chat." },
   { "date": "2026-08-02", "type": "improvement", "title": "Servers auto-update in the background", "detail": "Running servers now receive platform improvements automatically, without redeploying — new capabilities reach your existing agents on their own." },

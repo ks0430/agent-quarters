@@ -498,8 +498,9 @@ function apiSnippet(baseUrl, agentId) {
   return `# curl — message your agent\ncurl -N ${url} \\\n  -H "Authorization: Bearer YOUR_KEY" \\\n` +
     `  -H "Content-Type: application/json" \\\n  -d '{"message": "summarize the repo", "stream": true}'\n\n` +
     `# optional fields:\n` +
-    `#   "session": "ci"          separate conversation/context\n` +
-    `#   "model": "gpt-5.4-mini"  switch model for this call (cheaper/faster)\n` +
+    `#   "session": "ci"          named conversation — context persists across calls\n` +
+    `#   "stateless": true        isolated one-off call, no memory (ignores session)\n` +
+    `#   "model": "gpt-5.6-luna"  switch model for this call (cheaper/faster)\n` +
     `#   "reasoning": "low"       minimal|low|medium|high|xhigh`;
 }
 

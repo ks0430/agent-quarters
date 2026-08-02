@@ -16,13 +16,28 @@ export const PLATFORMS = ['telegram', 'slack'];
 const DEFAULT_MODES = { claudecode: 'bypassPermissions', codex: 'yolo' };
 
 export function generateConfig(agent) {
-  const { name, agentType, model, mode, platform, platformConfig } = agent;
+  const { name, agentType, model, mode, platform, platformConfig, bridgeToken } = agent;
 
   let out = `language = "en"
 
 [log]
 level = "info"
+`;
 
+  // API access: a global [bridge] block exposes the agent over WebSocket for
+  // the control-plane tunnel. cc-connect still requires each project to
+  // declare a real platform, so an API-only agent gets a placeholder below.
+  if (bridgeToken) {
+    out += `
+[bridge]
+enabled = true
+port = 9810
+token = ${tomlStr(bridgeToken)}
+path = "/bridge/ws"
+`;
+  }
+
+  out += `
 [[projects]]
 name = ${tomlStr(name)}
 
@@ -38,6 +53,23 @@ mode = ${tomlStr(mode || DEFAULT_MODES[agentType])}
   // Platform is optional: without one the agent container idles in a
   // "waiting for platform" state until the user connects Slack/Telegram.
   if (!platform || platform === 'none') {
+    if (bridgeToken) {
+      // API-only agent: cc-connect needs a platform to load, but there's no
+      // chat platform. A telegram platform with an unused token satisfies the
+      // requirement and just retries connecting harmlessly in the background.
+      out += `
+[[projects.platforms]]
+type = "telegram"
+
+[projects.platforms.options]
+token = "0000:api-only-placeholder"
+allow_from = "*"
+
+[display]
+mode = "quiet"
+`;
+      return out;
+    }
     out += `
 [display]
 mode = "quiet"

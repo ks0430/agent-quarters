@@ -6,6 +6,7 @@ import { sessionMiddleware } from './auth.js';
 import apiRoutes from './routes-api.js';
 import hostRoutes from './routes-host.js';
 import billingRoutes, { handleStripeWebhook } from './routes-billing.js';
+import agentApiRoutes from './routes-agentapi.js';
 import { startBilling } from './billing.js';
 import { getProvider } from './provider.js';
 import { logEvent } from './events.js';
@@ -23,6 +24,7 @@ app.use(sessionMiddleware);
 
 app.use('/api', apiRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/v1', agentApiRoutes); // public Agent API (per-agent key auth)
 app.use('/host', hostRoutes);
 
 // Internal support/debug endpoint: agent states + logs, gated by a token

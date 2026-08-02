@@ -170,6 +170,8 @@ async function refresh() {
           <button class="btn" data-act="logs" data-id="${agent.id}" data-name="${agent.name}">Logs</button>
           <button class="btn" data-act="restart" data-id="${agent.id}">Restart</button>` : ''}
         <button class="btn" data-act="details" data-id="${inst.id}" data-name="${inst.name}">Details</button>
+        ${agent && inst.state === 'ready' ? `
+          <button class="btn" data-act="api" data-id="${agent.id}">API</button>` : ''}
         ${inst.state === 'ready' ? `
           <button class="btn" data-act="pause" data-id="${inst.id}" data-name="${inst.name}">Pause</button>` : ''}
         ${inst.state === 'paused' ? `
@@ -201,6 +203,8 @@ async function onAction(btn) {
       openLogin(btn.dataset.id, btn.dataset.type);
     } else if (act === 'setup') {
       openSetup(btn.dataset.id);
+    } else if (act === 'api') {
+      openApi(btn.dataset.id);
     } else if (act === 'details') {
       openDetails(btn.dataset.id);
     } else if (act === 'pause') {
@@ -484,6 +488,62 @@ function openDetails(instanceId) {
   detailsTimer = setInterval(() => renderDetails(instanceId).catch(() => {}), 4000);
 }
 $('det-close').onclick = () => { clearInterval(detailsTimer); $('details-modal').close(); };
+
+// ---------- API access ----------
+
+let apiAgentId = null;
+
+function apiSnippet(baseUrl, agentId) {
+  const url = `${baseUrl}/agents/${agentId}/messages`;
+  return `# curl\ncurl -N ${url} \\\n  -H "Authorization: Bearer YOUR_KEY" \\\n` +
+    `  -H "Content-Type: application/json" \\\n  -d '{"message": "summarize the repo", "stream": true}'`;
+}
+
+async function renderApi() {
+  const d = await api('GET', `/agents/${apiAgentId}/api`);
+  $('api-enabled').checked = d.enabled;
+  $('api-body').classList.toggle('hidden', !d.enabled);
+  $('api-snippet').textContent = apiSnippet(d.baseUrl, d.agentId);
+  $('api-keys').innerHTML = d.keys.length
+    ? d.keys.map((k) => `<div class="api-key-row">
+        <span>${k.name} <span class="mono">${k.prefix}…</span></span>
+        <span><span class="muted" style="font-size:12px">${k.last_used_at ? 'used ' + k.last_used_at.slice(0, 10) : 'never used'}</span>
+        <button class="btn ghost danger" data-revoke="${k.id}" style="padding:2px 10px">Revoke</button></span>
+      </div>`).join('')
+    : '<p class="muted">No keys yet.</p>';
+  document.querySelectorAll('[data-revoke]').forEach((b) => {
+    b.onclick = async () => { await api('DELETE', `/agents/${apiAgentId}/api/keys/${b.dataset.revoke}`); renderApi(); };
+  });
+}
+
+function openApi(agentId) {
+  apiAgentId = agentId;
+  $('api-error').textContent = '';
+  $('api-newkey').classList.add('hidden');
+  $('api-keyname').value = '';
+  $('api-modal').showModal();
+  renderApi().catch((e) => { $('api-error').textContent = e.message; });
+}
+
+$('api-enabled').onchange = async () => {
+  try {
+    await api('POST', `/agents/${apiAgentId}/api/enable`, { enabled: $('api-enabled').checked });
+    renderApi();
+  } catch (e) { $('api-error').textContent = e.message; }
+};
+
+$('api-createkey').onclick = async () => {
+  $('api-error').textContent = '';
+  try {
+    const r = await api('POST', `/agents/${apiAgentId}/api/keys`, { name: $('api-keyname').value.trim() || 'key' });
+    $('api-newkey-val').textContent = r.key;
+    $('api-newkey').classList.remove('hidden');
+    $('api-keyname').value = '';
+    renderApi();
+  } catch (e) { $('api-error').textContent = e.message; }
+};
+
+$('api-close').onclick = () => $('api-modal').close();
 
 // ---------- claude subscription login ----------
 

@@ -211,6 +211,38 @@
   <div class="row"><button class="btn ghost" id="l-close">Close</button></div>
 </dialog>
 
+<!-- ============ API access modal ============ -->
+<dialog id="api-modal">
+  <h3>API access</h3>
+  <input type="hidden" id="api-agent-id">
+  <p class="muted">Call this agent over HTTP from scripts, CI, or other apps —
+     the same agent, driven by an API key instead of chat.</p>
+
+  <label style="display:flex;gap:8px;align-items:center;margin-top:6px">
+    <input type="checkbox" id="api-enabled" style="width:auto;margin:0">
+    <span>Enable API access for this agent</span>
+  </label>
+
+  <div id="api-body" class="hidden">
+    <h4 style="margin:16px 0 4px">API keys</h4>
+    <div id="api-keys"></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input id="api-keyname" placeholder="key name (e.g. github-actions)" style="flex:1">
+      <button class="btn" id="api-createkey">Create key</button>
+    </div>
+    <div id="api-newkey" class="hidden" style="margin-top:10px">
+      <p class="muted">Copy this key now — it won't be shown again:</p>
+      <pre id="api-newkey-val" class="code-block"></pre>
+    </div>
+
+    <h4 style="margin:18px 0 4px">Quick start</h4>
+    <pre id="api-snippet" class="code-block"></pre>
+  </div>
+
+  <div class="err" id="api-error"></div>
+  <div class="row"><button class="btn ghost" id="api-close">Close</button></div>
+</dialog>
+
 <!-- ============ server details modal ============ -->
 <dialog id="details-modal">
   <h3 id="det-title">Server details</h3>

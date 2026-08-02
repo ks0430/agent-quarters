@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
 import db from './db.js';
 import { logEvent } from './events.js';
+import { pollRequests, deliverResponse } from './apihub.js';
 
 const router = Router();
 
@@ -154,6 +155,24 @@ router.post('/status', (req, res) => {
     set.run(status, String(a.logs || '').slice(0, 8192), agent.id);
   }
   res.json({ ok: true, ...updatePayload() });
+});
+
+// Agent API tunnel: host long-polls here for customer API requests.
+router.get('/api-requests', async (req, res) => {
+  const reqs = await pollRequests(req.instance.id);
+  res.json(reqs);
+});
+
+// Host reports a delta/final for an API request.
+router.post('/api-response', (req, res) => {
+  deliverResponse({
+    requestId: String(req.body.requestId || ''),
+    delta: req.body.delta,
+    done: !!req.body.done,
+    content: req.body.content,
+    error: req.body.error,
+  });
+  res.json({ ok: true });
 });
 
 export default router;

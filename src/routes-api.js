@@ -263,6 +263,86 @@ router.get('/agents/:id/logs', requireUser, (req, res) => {
   res.json({ logs: agent.last_logs || '', status: agent.status });
 });
 
+// ---------- Agent API access ----------
+
+// Toggle the [bridge] block in the stored config by text-patching, so the
+// agent's chat-platform tokens are preserved exactly. API-only agents (no
+// chat platform) also get a placeholder telegram platform so cc-connect
+// actually runs (its entrypoint sleeps, and cc-connect refuses to load,
+// without a platform).
+const PLACEHOLDER_PLATFORM =
+  '\n[[projects.platforms]]\ntype = "telegram"\n\n[projects.platforms.options]\n' +
+  'token = "0000:api-only-placeholder"\nallow_from = "*"\n';
+
+function stripBridge(toml) {
+  return toml
+    .replace(/\n\[bridge\][\s\S]*?(?=\n\[\[projects\]\])/, '\n')
+    .replace(new RegExp(PLACEHOLDER_PLATFORM.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '');
+}
+
+function applyBridge(agent, bridgeToken) {
+  let toml = stripBridge(agent.config_toml);
+  const block = `\n[bridge]\nenabled = true\nport = 9810\ntoken = "${bridgeToken}"\npath = "/bridge/ws"\n`;
+  toml = toml.replace(/\n\[\[projects\]\]/, `${block}\n[[projects]]`);
+  // If no chat platform declared, inject the placeholder before [display].
+  if (!/\[\[projects\.platforms\]\]/.test(toml)) {
+    toml = toml.includes('[display]')
+      ? toml.replace('\n[display]', `${PLACEHOLDER_PLATFORM}\n[display]`)
+      : toml + PLACEHOLDER_PLATFORM;
+  }
+  return toml;
+}
+
+router.get('/agents/:id/api', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  const keys = db.prepare(
+    'SELECT id, name, prefix, created_at, last_used_at FROM api_keys WHERE agent_id = ? AND revoked_at IS NULL ORDER BY id DESC'
+  ).all(agent.id);
+  res.json({
+    enabled: !!agent.api_enabled,
+    baseUrl: (process.env.BASE_URL || '') + '/v1',
+    agentId: agent.id,
+    keys,
+  });
+});
+
+router.post('/agents/:id/api/enable', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  const enable = req.body.enabled !== false;
+  const bridgeToken = agent.bridge_token || crypto.randomBytes(24).toString('hex');
+  const configToml = enable ? applyBridge(agent, bridgeToken) : stripBridge(agent.config_toml);
+  const env = JSON.parse(agent.env_json);
+
+  db.prepare('UPDATE agents SET api_enabled = ?, bridge_token = ?, config_toml = ? WHERE id = ?')
+    .run(enable ? 1 : 0, bridgeToken, configToml, agent.id);
+  db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
+    .run(agent.iid, 'update-agent', JSON.stringify({ agentName: agent.name, configToml, env }));
+  logEvent(agent.iid, enable ? 'agent' : 'agent', enable ? '🔌 API access enabled' : 'API access disabled');
+  res.json({ ok: true, enabled: enable });
+});
+
+router.post('/agents/:id/api/keys', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  if (!agent.api_enabled) return res.status(400).json({ error: 'enable API access first' });
+  const name = String(req.body.name || 'key').slice(0, 40) || 'key';
+  const key = 'aq_' + crypto.randomBytes(24).toString('hex');
+  const hash = crypto.createHash('sha256').update(key).digest('hex');
+  db.prepare('INSERT INTO api_keys (agent_id, name, key_hash, prefix) VALUES (?, ?, ?, ?)')
+    .run(agent.id, name, hash, key.slice(0, 11));
+  res.json({ ok: true, key, name }); // full key shown exactly once
+});
+
+router.delete('/agents/:id/api/keys/:keyId', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  db.prepare("UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ? AND agent_id = ?")
+    .run(req.params.keyId, agent.id);
+  res.json({ ok: true });
+});
+
 router.delete('/instances/:id', requireUser, async (req, res) => {
   const inst = ownedInstance(req, res);
   if (!inst) return;

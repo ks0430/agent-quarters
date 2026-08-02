@@ -9,8 +9,11 @@
 const { execFile, spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const net = require('node:net');
+const crypto = require('node:crypto');
 
-const VERSION = 2; // bump on every host-agent change — drives self-update
+const VERSION = 3; // bump on every host-agent change — drives self-update
+const BRIDGE_PORT = 9810; // localhost port the agent container publishes its bridge on
 
 const CP_URL = process.env.CP_URL;
 const HOST_TOKEN = process.env.HOST_TOKEN;
@@ -21,6 +24,84 @@ const SELF_PATH = process.argv[1]; // /opt/agentdeploy/host-agent.js in prod
 if (!CP_URL || !HOST_TOKEN) {
   console.error('CP_URL and HOST_TOKEN are required');
   process.exit(1);
+}
+
+// --- minimal WebSocket client (localhost ws:// only, no deps, no TLS) ---
+// Enough to talk to cc-connect's bridge: masked client text frames, decode
+// server frames (fragmentation + 16/64-bit lengths), auto-pong. The instance
+// only has apt Node (no ws package), so we implement the slice we need.
+function wsEncode(payload, opcode = 0x1) {
+  const mask = crypto.randomBytes(4);
+  const len = payload.length;
+  let header;
+  if (len < 126) header = Buffer.from([0x80 | opcode, 0x80 | len]);
+  else if (len < 65536) { header = Buffer.alloc(4); header[0] = 0x80 | opcode; header[1] = 0x80 | 126; header.writeUInt16BE(len, 2); }
+  else { header = Buffer.alloc(10); header[0] = 0x80 | opcode; header[1] = 0x80 | 127; header.writeBigUInt64BE(BigInt(len), 2); }
+  const masked = Buffer.from(payload);
+  for (let i = 0; i < masked.length; i++) masked[i] ^= mask[i & 3];
+  return Buffer.concat([header, mask, masked]);
+}
+function wsDecode(buf) {
+  if (buf.length < 2) return null;
+  const fin = (buf[0] & 0x80) !== 0;
+  const opcode = buf[0] & 0x0f;
+  let len = buf[1] & 0x7f;
+  let off = 2;
+  if (len === 126) { if (buf.length < 4) return null; len = buf.readUInt16BE(2); off = 4; }
+  else if (len === 127) { if (buf.length < 10) return null; len = Number(buf.readBigUInt64BE(2)); off = 10; }
+  if (buf.length < off + len) return null;
+  return { fin, opcode, payload: buf.slice(off, off + len), rest: buf.slice(off + len) };
+}
+
+// Open a bridge WS, register as the "api" platform, send one message, and
+// feed reply frames to onReply(msg) until it returns a truthy result.
+function bridgeCall({ token, register, message, onReply, timeoutMs = 180000 }) {
+  return new Promise((resolve, reject) => {
+    const key = crypto.randomBytes(16).toString('base64');
+    const sock = net.connect(BRIDGE_PORT, '127.0.0.1');
+    let buf = Buffer.alloc(0);
+    let handshaked = false;
+    let frag = [];
+    const timer = setTimeout(() => { sock.destroy(); reject(new Error('bridge call timed out')); }, timeoutMs);
+    const send = (obj) => sock.write(wsEncode(Buffer.from(JSON.stringify(obj))));
+    const finish = (fn, arg) => { clearTimeout(timer); try { sock.end(); } catch {} fn(arg); };
+
+    sock.on('connect', () => sock.write(
+      `GET /bridge/ws HTTP/1.1\r\nHost: 127.0.0.1:${BRIDGE_PORT}\r\nUpgrade: websocket\r\n` +
+      `Connection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n` +
+      `Authorization: Bearer ${token}\r\n\r\n`));
+
+    sock.on('data', (d) => {
+      buf = Buffer.concat([buf, d]);
+      if (!handshaked) {
+        const i = buf.indexOf('\r\n\r\n');
+        if (i < 0) return;
+        const statusLine = buf.slice(0, buf.indexOf('\r\n')).toString();
+        if (!statusLine.includes('101')) return finish(reject, new Error(`bridge handshake failed: ${statusLine}`));
+        handshaked = true;
+        buf = buf.slice(i + 4);
+        send(register);
+        send(message);
+      }
+      for (;;) {
+        const f = wsDecode(buf);
+        if (!f) break;
+        buf = f.rest;
+        if (f.opcode === 0x9) { sock.write(wsEncode(f.payload, 0xA)); continue; } // ping -> pong
+        if (f.opcode === 0x8) return finish(resolve, null); // close
+        if (f.opcode === 0x1 || f.opcode === 0x0) {
+          frag.push(f.payload);
+          if (!f.fin) continue;
+          const text = Buffer.concat(frag).toString(); frag = [];
+          let msg; try { msg = JSON.parse(text); } catch { continue; }
+          let out; try { out = onReply(msg, send); } catch (e) { return finish(reject, e); }
+          if (out) return finish(resolve, out);
+        }
+      }
+    });
+    sock.on('error', (e) => finish(reject, e));
+    sock.on('close', () => clearTimeout(timer));
+  });
 }
 
 const run = (cmd, args, opts = {}) => new Promise((resolve) => {
@@ -105,11 +186,16 @@ async function startContainer(name, dir) {
     await sleep(5000);
   }
   await run('docker', ['rm', '-f', containerOf(name)]); // idempotent
+  // Publish the bridge port to localhost when this agent has API access
+  // enabled (config.toml carries a [bridge] block).
+  const cfg = await fs.readFile(path.join(dir, 'home', '.cc-connect', 'config.toml'), 'utf8').catch(() => '');
+  const portArgs = /\[bridge\]/.test(cfg) ? ['-p', `127.0.0.1:${BRIDGE_PORT}:${BRIDGE_PORT}`] : [];
   const r = await run('docker', ['run', '-d',
     '--name', containerOf(name),
     '--restart', 'unless-stopped',
     '--memory', '1g', '--memory-swap', '2g',
     '--cpus', '1.5', '--pids-limit', '512',
+    ...portArgs,
     '--env-file', path.join(dir, 'env.list'),
     '-v', `${path.join(dir, 'home')}:/home/agent`,
     'agent-base']);
@@ -325,7 +411,46 @@ function maybeUpdate(resp) {
   if (v && v > VERSION) selfUpdate(v).catch((e) => console.error('self-update:', e.message));
 }
 
+// --- Agent API tunnel (long-poll) ---
+// Holds a GET open; the control plane responds when a customer API request
+// arrives for this instance. We run the message through the local bridge and
+// POST the reply back. Runs as its own loop alongside command polling.
+async function handleApiRequest(reqObj) {
+  const { requestId, bridgeToken, sessionKey, content, stream } = reqObj;
+  const post = (body) => api('POST', '/host/api-response', { requestId, ...body }).catch(() => {});
+  try {
+    const reply = await bridgeCall({
+      token: bridgeToken,
+      register: { type: 'register', platform: 'api', capabilities: ['text'],
+        metadata: { source: 'agentquarters-api' } },
+      message: { type: 'message', msg_id: requestId, session_key: sessionKey,
+        user_id: 'api', user_name: 'API', content, reply_ctx: requestId },
+      onReply: (msg, send) => {
+        if (msg.type === 'register_ack') { if (!msg.ok) throw new Error(`register rejected: ${msg.error}`); return null; }
+        if (msg.type === 'reply_stream') { if (stream && msg.delta) post({ delta: msg.delta }); return null; }
+        if (msg.type === 'reply') return { content: msg.content || '' };
+        return null;
+      },
+    });
+    await post({ done: true, content: reply ? reply.content : '' });
+  } catch (err) {
+    await post({ done: true, error: String(err.message || err).slice(0, 300) });
+  }
+}
+
+async function apiTunnelLoop() {
+  for (;;) {
+    try {
+      const reqs = await api('GET', '/host/api-requests'); // long-poll (~25s) or []
+      for (const r of Array.isArray(reqs) ? reqs : []) handleApiRequest(r); // concurrent
+    } catch (err) {
+      await new Promise((r) => setTimeout(r, 3000)); // backoff on error/timeout
+    }
+  }
+}
+
 async function main() {
+  apiTunnelLoop(); // fire-and-forget; self-healing
   // Register with retry — the control plane must learn we're alive.
   for (;;) {
     try {

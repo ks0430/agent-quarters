@@ -96,5 +96,21 @@ if (!agentCols.includes('auth_method')) {
 if (!agentCols.includes('login_state')) db.exec('ALTER TABLE agents ADD COLUMN login_state TEXT');
 if (!agentCols.includes('login_url')) db.exec('ALTER TABLE agents ADD COLUMN login_url TEXT');
 if (!agentCols.includes('login_code')) db.exec('ALTER TABLE agents ADD COLUMN login_code TEXT');
+if (!agentCols.includes('api_enabled')) db.exec('ALTER TABLE agents ADD COLUMN api_enabled INTEGER NOT NULL DEFAULT 0');
+if (!agentCols.includes('bridge_token')) db.exec('ALTER TABLE agents ADD COLUMN bridge_token TEXT');
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id INTEGER NOT NULL REFERENCES agents(id),
+  name TEXT NOT NULL,
+  key_hash TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_apikeys_agent ON api_keys(agent_id);
+`);
 
 export default db;

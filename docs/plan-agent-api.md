@@ -149,11 +149,28 @@ Agent card → **Settings** gains an **"API access"** section:
 
 ## 6. Implementation phases
 
-**Phase 0 — protocol validation (½ day).** Local prototype: agent-base
-container + `[bridge]` config; tiny node script registers as adapter,
-sends message, receives reply for BOTH claudecode and codex projects.
-Confirms the 1.0-draft protocol behaves as documented (it already powers
-cc-connect's own cloud-web UI, so risk is low but nonzero).
+**Phase 0 — protocol validation — ✅ DONE 2026-08-02.** `scripts/bridge-probe.mjs`
+against a real agent-base container (cc-connect v1.4.1) confirmed the full
+register → register_ack → message → reply cycle for BOTH claudecode and
+codex. Findings that shape the build:
+- `[bridge]` is a **global top-level block** (`enabled/port/token/path`),
+  NOT a per-project platform. `type = "bridge"` is rejected ("unknown
+  platform"). The bridge server starts at `:9810` and enforces the token
+  (401 without it).
+- BUT cc-connect still requires each project to declare **at least one
+  real `[[projects.platforms]]`** or config-load fails. So an API-only
+  agent config must include a platform. Options: (a) keep the user's real
+  Slack/Telegram platform and add `[bridge]` alongside; (b) for API-only
+  agents, add a harmless placeholder platform (e.g. telegram with an
+  unused dummy token — it just retries connecting in the background).
+  Decide in Phase 1; (a) is free when a platform is already connected.
+- Adapters bind to a project via a `project` field in the `register`
+  message (or the default project). Session keys are adapter-composed
+  (`api:{session}:{key}`) — new name = new conversation, as planned.
+- The container **entrypoint currently sleeps** when no
+  `[[projects.platforms]]` is present ("waiting for a chat platform") —
+  since we always have a platform (real or placeholder), cc-connect runs;
+  no entrypoint change needed for Phase 1.
 
 **Phase 1 — MVP (2–3 days).**
 - host-agent v2: persistent CP tunnel (outbound WSS, reconnect w/ backoff),

@@ -12,7 +12,7 @@ const path = require('node:path');
 const net = require('node:net');
 const crypto = require('node:crypto');
 
-const VERSION = 3; // bump on every host-agent change — drives self-update
+const VERSION = 4; // bump on every host-agent change — drives self-update
 const BRIDGE_PORT = 9810; // localhost port the agent container publishes its bridge on
 
 const CP_URL = process.env.CP_URL;
@@ -416,13 +416,29 @@ function maybeUpdate(resp) {
 // arrives for this instance. We run the message through the local bridge and
 // POST the reply back. Runs as its own loop alongside command polling.
 async function handleApiRequest(reqObj) {
-  const { requestId, bridgeToken, sessionKey, content, stream } = reqObj;
+  const { requestId, bridgeToken, sessionKey, content, stream, model, reasoning } = reqObj;
   const post = (body) => api('POST', '/host/api-response', { requestId, ...body }).catch(() => {});
+  const register = { type: 'register', platform: 'api', capabilities: ['text'],
+    metadata: { source: 'agentquarters-api' } };
+  // Run a slash command on the session and wait for its reply (used to switch
+  // model/reasoning before the real message). Agent-wide, cheap, no-op reply.
+  const runCommand = (cmd) => bridgeCall({
+    token: bridgeToken, register,
+    message: { type: 'message', msg_id: `${requestId}-cmd`, session_key: sessionKey,
+      user_id: 'api', user_name: 'API', content: cmd, reply_ctx: `${requestId}-cmd` },
+    onReply: (msg) => {
+      if (msg.type === 'register_ack') return null;
+      if (msg.type === 'reply') return { ok: true };
+      return null;
+    },
+    timeoutMs: 30000,
+  });
   try {
+    if (model) await runCommand(`/model ${model}`);
+    if (reasoning) await runCommand(`/reasoning ${reasoning}`);
     const reply = await bridgeCall({
       token: bridgeToken,
-      register: { type: 'register', platform: 'api', capabilities: ['text'],
-        metadata: { source: 'agentquarters-api' } },
+      register,
       message: { type: 'message', msg_id: requestId, session_key: sessionKey,
         user_id: 'api', user_name: 'API', content, reply_ctx: requestId },
       onReply: (msg, send) => {

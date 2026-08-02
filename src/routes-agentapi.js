@@ -43,8 +43,12 @@ router.post('/agents/:id/messages', apiKeyAuth, (req, res) => {
   const session = String(req.body.session || 'default').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 60) || 'default';
   const stream = req.body.stream === true || req.query.stream === 'true';
   const sessionKey = `api:${session}:${a.id}`;
+  // Optional per-request model / reasoning switch (agent-wide, applied before
+  // the message). Whitelisted charset since it becomes a slash command.
+  const model = req.body.model ? String(req.body.model).replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 60) : null;
+  const reasoning = ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(req.body.reasoning) ? req.body.reasoning : null;
 
-  const payload = { bridgeToken: a.bridge_token, sessionKey, content, stream };
+  const payload = { bridgeToken: a.bridge_token, sessionKey, content, stream, model, reasoning };
   const started = Date.now();
 
   if (stream) {

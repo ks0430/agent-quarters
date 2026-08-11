@@ -36,10 +36,14 @@ app.get('/internal/debug/agents', (req, res) => {
   }
   const rows = db.prepare(`
     SELECT a.id, a.name, a.agent_type, a.platform, a.status, a.auth_method, a.login_state,
-           a.last_logs, i.name AS instance, i.state AS instance_state, i.last_seen, i.public_ip
+           a.api_enabled, a.health, a.health_at,
+           a.last_logs, i.id AS instance_id, i.name AS instance, i.state AS instance_state, i.last_seen, i.public_ip
     FROM agents a JOIN instances i ON i.id = a.instance_id
     WHERE a.status != 'deleted' ORDER BY a.id DESC`).all();
-  res.json(rows);
+  const recentCmds = db.prepare(
+    "SELECT id, instance_id, type, status, substr(COALESCE(result,''),0,120) AS result, created_at, updated_at FROM commands ORDER BY id DESC LIMIT 12"
+  ).all();
+  res.json({ agents: rows, recentCommands: recentCmds });
 });
 
 // Files fetched by instance bootstrap scripts.

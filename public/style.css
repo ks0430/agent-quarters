@@ -124,11 +124,18 @@ summary { cursor: pointer; font-size: 13px; }
 .agent-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
   padding: 18px 22px; margin-top: 18px;
+  transition: border-color .15s ease;
 }
+.agent-card:hover { border-color: #3b4657; }
 .agent-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
 .agent-name { font-size: 17px; font-weight: 600; }
 .agent-meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
-.agent-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.agent-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* the one thing to do next stands alone; everything else is quieter below */
+.primary-row { margin-top: 14px; }
+.secondary-row { margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+.btn.small { padding: 5px 11px; font-size: 13px; background: transparent; color: var(--muted); }
+.btn.small:hover { background: var(--panel2); color: var(--text); }
 
 .pill {
   display: inline-flex; align-items: center; gap: 6px;

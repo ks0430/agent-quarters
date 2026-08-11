@@ -206,9 +206,11 @@ router.post('/agents/:id/config', requireUser, (req, res) => {
   if (errors.length) return res.status(400).json({ error: errors.join('; ') });
 
   const configToml = generateConfig(spec);
-  const env = generateEnv(spec);
+  const authEnv = generateEnv(spec);
   db.prepare('UPDATE agents SET agent_type = ?, model = ?, platform = ?, config_toml = ?, env_json = ? WHERE id = ?')
-    .run(spec.agentType, spec.model, spec.platform, configToml, JSON.stringify(env), agent.id);
+    .run(spec.agentType, spec.model, spec.platform, configToml, JSON.stringify(authEnv), agent.id);
+  // Keep the user's own env vars across config changes.
+  const env = { ...authEnv, ...userEnvOf(agent) };
   db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
     .run(agent.iid, 'update-agent', JSON.stringify({ agentName: agent.name, configToml, env }));
   logEvent(agent.iid, 'agent', `Configuration updated (platform: ${spec.platform}, mode: ${spec.mode || 'default'})`);
@@ -275,6 +277,71 @@ router.get('/agents/:id/logs', requireUser, (req, res) => {
   res.json({ logs: agent.last_logs || '', status: agent.status });
 });
 
+// ---------- Environment variables ----------
+// User-defined secrets/config injected into the agent container, so people
+// never have to paste API tokens into a chat box (where they'd persist in
+// conversation history and logs). Stored separately from the auth env we
+// manage, and merged when the container is (re)created.
+
+// Names we own — letting users set these would break agent auth.
+const RESERVED_ENV = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
+
+const userEnvOf = (agent) => { try { return JSON.parse(agent.user_env_json || '{}'); } catch { return {}; } };
+// Full env for a container: auth env first, user vars layered on top.
+const fullEnvOf = (agent) => ({ ...JSON.parse(agent.env_json || '{}'), ...userEnvOf(agent) });
+
+const maskValue = (v) => (v.length <= 8 ? '••••' : `${v.slice(0, 3)}••••${v.slice(-2)}`);
+
+function pushEnvUpdate(agent) {
+  db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
+    .run(agent.iid, 'update-agent', JSON.stringify({
+      agentName: agent.name, configToml: agent.config_toml, env: fullEnvOf(agent),
+    }));
+}
+
+router.get('/agents/:id/env', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  const vars = Object.entries(userEnvOf(agent)).map(([key, value]) => ({ key, masked: maskValue(String(value)) }));
+  res.json({ vars });
+});
+
+router.post('/agents/:id/env', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  const key = String(req.body.key || '').trim();
+  const value = String(req.body.value ?? '');
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    return res.status(400).json({ error: 'name must be letters, digits and underscores, not starting with a digit' });
+  }
+  if (RESERVED_ENV.includes(key.toUpperCase())) {
+    return res.status(400).json({ error: `${key} is managed by AgentQuarters and can't be set here` });
+  }
+  if (!value) return res.status(400).json({ error: 'value is required' });
+  if (value.length > 8000) return res.status(400).json({ error: 'value too long (max 8000 chars)' });
+
+  const vars = userEnvOf(agent);
+  const isNew = !(key in vars);
+  vars[key] = value;
+  db.prepare('UPDATE agents SET user_env_json = ? WHERE id = ?').run(JSON.stringify(vars), agent.id);
+  pushEnvUpdate({ ...agent, user_env_json: JSON.stringify(vars) });
+  // Never log the value — only the name.
+  logEvent(agent.iid, 'agent', `Environment variable ${key} ${isNew ? 'added' : 'updated'} — agent restarting`);
+  res.json({ ok: true });
+});
+
+router.delete('/agents/:id/env/:key', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  const vars = userEnvOf(agent);
+  if (!(req.params.key in vars)) return res.status(404).json({ error: 'no such variable' });
+  delete vars[req.params.key];
+  db.prepare('UPDATE agents SET user_env_json = ? WHERE id = ?').run(JSON.stringify(vars), agent.id);
+  pushEnvUpdate({ ...agent, user_env_json: JSON.stringify(vars) });
+  logEvent(agent.iid, 'agent', `Environment variable ${req.params.key} removed — agent restarting`);
+  res.json({ ok: true });
+});
+
 // ---------- Agent API access ----------
 
 // Toggle the [bridge] block in the stored config by text-patching, so the
@@ -325,7 +392,7 @@ router.post('/agents/:id/api/enable', requireUser, (req, res) => {
   const enable = req.body.enabled !== false;
   const bridgeToken = agent.bridge_token || crypto.randomBytes(24).toString('hex');
   const configToml = enable ? applyBridge(agent, bridgeToken) : stripBridge(agent.config_toml);
-  const env = JSON.parse(agent.env_json);
+  const env = fullEnvOf(agent); // auth env + the user's own vars
 
   db.prepare('UPDATE agents SET api_enabled = ?, bridge_token = ?, config_toml = ? WHERE id = ?')
     .run(enable ? 1 : 0, bridgeToken, configToml, agent.id);

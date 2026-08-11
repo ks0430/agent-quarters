@@ -153,6 +153,17 @@ async function refresh() {
     const typeLabel = agent ? (agent.agent_type === 'codex' ? 'Codex' : 'Claude Code') : '';
     const platform = agent && agent.platform !== 'none' ? ` · ${agent.platform}` : '';
     const connectLabel = agent && agent.platform === 'none' ? 'Connect platform' : 'Settings';
+    // The one action that matters right now gets its own prominent row.
+    const primary = [
+      !agent && inst.state !== 'error'
+        ? `<button class="btn primary" data-act="setup" data-id="${inst.id}">Set up agent</button>` : '',
+      agent && needsLogin(agent) && agent.status === 'running'
+        ? `<button class="btn primary" data-act="login" data-id="${agent.id}" data-type="${agent.agent_type}">Login to ${agent.agent_type === 'codex' ? 'ChatGPT' : 'Claude'}</button>` : '',
+      agent && !needsLogin(agent) && agent.platform === 'none' && agent.status === 'running'
+        ? `<button class="btn primary" data-act="edit" data-id="${agent.id}" data-platform="${agent.platform}" data-model="${agent.model || ''}" data-type="${agent.agent_type}" data-auth="${agent.auth_method}" data-name="${agent.name}">Connect Slack or Telegram</button>` : '',
+      inst.state === 'paused'
+        ? `<button class="btn primary" data-act="resume" data-id="${inst.id}">▶ Resume server</button>` : '',
+    ].filter(Boolean).join('');
     return `
     <div class="agent-card">
       <div class="agent-top">
@@ -164,28 +175,27 @@ async function refresh() {
         ${statusPill(inst, agent)}
       </div>
       ${inst.error ? `<div class="err">${inst.error}</div>` : ''}
-      <div class="agent-actions">
-        ${!agent && inst.state !== 'error' ? `
-          <button class="btn primary" data-act="setup" data-id="${inst.id}">Set up agent</button>` : ''}
-        ${agent && needsLogin(agent) && agent.status === 'running' ? `
-          <button class="btn primary" data-act="login" data-id="${agent.id}" data-type="${agent.agent_type}">
-            Login to ${agent.agent_type === 'codex' ? 'ChatGPT' : 'Claude'}</button>` : ''}
+      ${primary ? `<div class="agent-actions primary-row">${primary}</div>` : ''}
+      ${agent || inst.state === 'ready' ? `
+      <div class="agent-actions secondary-row">
         ${agent ? `
-          <button class="btn" data-act="edit" data-id="${agent.id}" data-platform="${agent.platform}"
+          <button class="btn small" data-act="edit" data-id="${agent.id}" data-platform="${agent.platform}"
             data-model="${agent.model || ''}" data-type="${agent.agent_type}"
-            data-auth="${agent.auth_method}" data-name="${agent.name}">${connectLabel}</button>
-          <button class="btn" data-act="logs" data-id="${agent.id}" data-name="${agent.name}">Logs</button>
-          <button class="btn" data-act="test" data-id="${agent.id}">Test connection</button>
-          <button class="btn" data-act="restart" data-id="${agent.id}">Restart</button>` : ''}
-        <button class="btn" data-act="details" data-id="${inst.id}" data-name="${inst.name}">Details</button>
-        ${agent && inst.state === 'ready' ? `
-          <button class="btn" data-act="api" data-id="${agent.id}">API</button>` : ''}
+            data-auth="${agent.auth_method}" data-name="${agent.name}">⚙️ ${connectLabel}</button>
+          <button class="btn small" data-act="env" data-id="${agent.id}">🔑 Env vars</button>
+          <button class="btn small" data-act="api" data-id="${agent.id}">🔌 API</button>
+          <button class="btn small" data-act="logs" data-id="${agent.id}" data-name="${agent.name}">📄 Logs</button>
+          <button class="btn small" data-act="test" data-id="${agent.id}">📡 Test connection</button>
+          <button class="btn small" data-act="restart" data-id="${agent.id}">↻ Restart</button>` : ''}
+        <button class="btn small" data-act="details" data-id="${inst.id}" data-name="${inst.name}">📋 Details</button>
         ${inst.state === 'ready' ? `
-          <button class="btn" data-act="pause" data-id="${inst.id}" data-name="${inst.name}">Pause</button>` : ''}
-        ${inst.state === 'paused' ? `
-          <button class="btn primary" data-act="resume" data-id="${inst.id}">Resume</button>` : ''}
-        <button class="btn ghost danger" data-act="delete" data-id="${inst.id}" data-name="${inst.name}">Delete</button>
-      </div>
+          <button class="btn small" data-act="pause" data-id="${inst.id}" data-name="${inst.name}">⏸ Pause</button>` : ''}
+        <button class="btn small ghost danger" data-act="delete" data-id="${inst.id}" data-name="${inst.name}">Delete</button>
+      </div>` : `
+      <div class="agent-actions secondary-row">
+        <button class="btn small" data-act="details" data-id="${inst.id}" data-name="${inst.name}">📋 Details</button>
+        <button class="btn small ghost danger" data-act="delete" data-id="${inst.id}" data-name="${inst.name}">Delete</button>
+      </div>`}
     </div>`;
   }).join('');
 
@@ -236,6 +246,8 @@ async function onAction(btn) {
       openSetup(btn.dataset.id);
     } else if (act === 'api') {
       openApi(btn.dataset.id);
+    } else if (act === 'env') {
+      openEnv(btn.dataset.id);
     } else if (act === 'details') {
       openDetails(btn.dataset.id);
     } else if (act === 'pause') {
@@ -580,6 +592,47 @@ $('api-createkey').onclick = async () => {
 };
 
 $('api-close').onclick = () => $('api-modal').close();
+
+// ---------- environment variables ----------
+
+let envAgentId = null;
+
+async function renderEnv() {
+  const { vars } = await api('GET', `/agents/${envAgentId}/env`);
+  $('env-list').innerHTML = vars.length
+    ? vars.map((v) => `<div class="api-key-row">
+        <span><strong>${v.key}</strong> <span class="mono">${v.masked}</span></span>
+        <button class="btn ghost danger" data-envdel="${encodeURIComponent(v.key)}" style="padding:2px 10px">Remove</button>
+      </div>`).join('')
+    : '<p class="muted">No variables yet.</p>';
+  document.querySelectorAll('[data-envdel]').forEach((b) => {
+    b.onclick = async () => {
+      try { await api('DELETE', `/agents/${envAgentId}/env/${b.dataset.envdel}`); renderEnv(); }
+      catch (e) { $('env-error').textContent = e.message; }
+    };
+  });
+}
+
+function openEnv(agentId) {
+  envAgentId = agentId;
+  $('env-error').textContent = '';
+  $('env-key').value = ''; $('env-value').value = '';
+  $('env-modal').showModal();
+  renderEnv().catch((e) => { $('env-error').textContent = e.message; });
+}
+
+$('env-add').onclick = async () => {
+  $('env-error').textContent = '';
+  try {
+    await api('POST', `/agents/${envAgentId}/env`, {
+      key: $('env-key').value.trim(), value: $('env-value').value,
+    });
+    $('env-key').value = ''; $('env-value').value = '';
+    renderEnv();
+  } catch (e) { $('env-error').textContent = e.message; }
+};
+
+$('env-close').onclick = () => $('env-modal').close();
 
 // ---------- claude subscription login ----------
 

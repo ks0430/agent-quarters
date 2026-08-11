@@ -211,6 +211,26 @@
   <div class="row"><button class="btn ghost" id="l-close">Close</button></div>
 </dialog>
 
+<!-- ============ environment variables modal ============ -->
+<dialog id="env-modal">
+  <h3>Environment variables</h3>
+  <input type="hidden" id="env-agent-id">
+  <p class="muted">Give your agent secrets and config without pasting them into chat.
+     Values are injected into the agent's environment — reference them as
+     <code>$MY_TOKEN</code> in commands and code. Never shown in chat history or logs.</p>
+
+  <div id="env-list"></div>
+
+  <div style="display:flex;gap:8px;margin-top:12px">
+    <input id="env-key" placeholder="NAME" style="flex:1" autocapitalize="characters">
+    <input id="env-value" type="password" placeholder="value" style="flex:2">
+    <button class="btn" id="env-add">Add</button>
+  </div>
+  <p class="muted" style="font-size:12px;margin-top:8px">Saving restarts the agent (a few seconds) so it picks up the new value.</p>
+  <div class="err" id="env-error"></div>
+  <div class="row"><button class="btn ghost" id="env-close">Close</button></div>
+</dialog>
+
 <!-- ============ API access modal ============ -->
 <dialog id="api-modal">
   <h3>API access</h3>

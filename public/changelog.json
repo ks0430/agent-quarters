@@ -1,4 +1,6 @@
 [
+  { "date": "2026-08-11", "type": "feature", "title": "Environment variables", "detail": "Store API tokens and config for your agent in the dashboard instead of pasting them into chat. Values are injected into the agent's environment (use them as $MY_TOKEN) and never appear in chat history or logs." },
+  { "date": "2026-08-11", "type": "improvement", "title": "Cleaner agent cards", "detail": "Each card now highlights the one action that matters next (set up, log in, connect a platform, resume) with everyday tools grouped quietly below." },
   { "date": "2026-08-11", "type": "improvement", "title": "Test connection is now instant", "detail": "The connection test uses each CLI's built-in auth check instead of a full model round-trip — results in ~3 seconds instead of 30-60." },
   { "date": "2026-08-11", "type": "feature", "title": "Test connection", "detail": "New button on each agent: runs a live probe to check the agent's login is actually valid (not just what was recorded at setup). Flags an expired login and prompts you to re-login." },
   { "date": "2026-08-02", "type": "improvement", "title": "Stateless API calls", "detail": "Add \"stateless\": true to an API request for a fully isolated, no-memory call — a throwaway session is used and deleted automatically. Named sessions still persist context across calls as before." },

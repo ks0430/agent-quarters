@@ -12,7 +12,7 @@ const path = require('node:path');
 const net = require('node:net');
 const crypto = require('node:crypto');
 
-const VERSION = 6; // bump on every host-agent change — drives self-update
+const VERSION = 7; // bump on every host-agent change — drives self-update
 const BRIDGE_PORT = 9810; // localhost port the agent container publishes its bridge on
 
 const CP_URL = process.env.CP_URL;
@@ -253,21 +253,33 @@ const handlers = {
     return 'restarted';
   },
 
-  // Live connection test: runs a one-shot CLI probe in the container to check
-  // the agent's login is actually valid (not just what we recorded at setup).
-  async 'health-check'({ agentName, agentType }) {
+  // Live connection test. Uses each CLI's dedicated auth-status command,
+  // which answers in well under a second — a full model round-trip probe
+  // took ~20s+ (and codex retries 5x on 401, making failures the slowest
+  // case). deep:true forces the old round-trip probe when you want proof
+  // the model actually answers, not just that credentials are valid.
+  async 'health-check'({ agentName, agentType, deep }) {
     const name = safeName(agentName);
     const st = await run('docker', ['inspect', '--format', '{{.State.Status}}', containerOf(name)]);
     if (!st.ok || st.stdout.trim() !== 'running') return 'stopped';
+    const exec = (cmd, timeout) => run('docker', ['exec', '-u', 'agent', containerOf(name), 'sh', '-c',
+      `cd /home/agent/workspace && ${cmd} 2>&1 | tail -8`], { timeout });
+
+    if (!deep) {
+      const cmd = agentType === 'codex' ? 'timeout 20 codex login status' : 'timeout 20 claude auth status';
+      const r = await exec(cmd, 30000);
+      const out = (r.stdout + r.stderr).trim();
+      if (/not logged in|"loggedIn"\s*:\s*false|logged out/i.test(out)) return 'login_expired';
+      if (/logged in|"loggedIn"\s*:\s*true|account|subscription|api key/i.test(out)) return 'connected';
+      return 'unknown: ' + out.replace(/\s+/g, ' ').slice(-120);
+    }
+
     const cli = agentType === 'codex'
       ? 'codex exec --skip-git-repo-check "reply with exactly: OK"'
       : 'claude -p "reply with exactly: OK"';
-    const r = await run('docker', ['exec', '-u', 'agent', containerOf(name), 'sh', '-c',
-      `cd /home/agent/workspace && timeout 60 ${cli} 2>&1 | tail -8`], { timeout: 75000 });
+    const r = await exec(`timeout 60 ${cli}`, 75000);
     const out = (r.stdout + r.stderr);
-    if (/not logged in|please run.*login|unauthorized|\b401\b|invalid token|missing bearer|authentication|please run codex login/i.test(out)) {
-      return 'login_expired';
-    }
+    if (/not logged in|please run.*login|unauthorized|\b401\b|invalid token|missing bearer/i.test(out)) return 'login_expired';
     if (/\bok\b/i.test(out)) return 'connected';
     return 'unknown: ' + out.trim().replace(/\s+/g, ' ').slice(-120);
   },

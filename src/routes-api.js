@@ -263,7 +263,9 @@ router.post('/agents/:id/test', requireUser, (req, res) => {
   if (!agent) return;
   db.prepare("UPDATE agents SET health = 'checking' WHERE id = ?").run(agent.id);
   db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
-    .run(agent.iid, 'health-check', JSON.stringify({ agentName: agent.name, agentType: agent.agent_type }));
+    .run(agent.iid, 'health-check', JSON.stringify({
+      agentName: agent.name, agentType: agent.agent_type, deep: req.body.deep === true,
+    }));
   res.json({ ok: true });
 });
 

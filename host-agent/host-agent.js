@@ -12,7 +12,7 @@ const path = require('node:path');
 const net = require('node:net');
 const crypto = require('node:crypto');
 
-const VERSION = 5; // bump on every host-agent change — drives self-update
+const VERSION = 6; // bump on every host-agent change — drives self-update
 const BRIDGE_PORT = 9810; // localhost port the agent container publishes its bridge on
 
 const CP_URL = process.env.CP_URL;
@@ -251,6 +251,25 @@ const handlers = {
     const r = await run('docker', ['restart', containerOf(name)]);
     if (!r.ok) throw new Error(r.stderr.slice(0, 500));
     return 'restarted';
+  },
+
+  // Live connection test: runs a one-shot CLI probe in the container to check
+  // the agent's login is actually valid (not just what we recorded at setup).
+  async 'health-check'({ agentName, agentType }) {
+    const name = safeName(agentName);
+    const st = await run('docker', ['inspect', '--format', '{{.State.Status}}', containerOf(name)]);
+    if (!st.ok || st.stdout.trim() !== 'running') return 'stopped';
+    const cli = agentType === 'codex'
+      ? 'codex exec --skip-git-repo-check "reply with exactly: OK"'
+      : 'claude -p "reply with exactly: OK"';
+    const r = await run('docker', ['exec', '-u', 'agent', containerOf(name), 'sh', '-c',
+      `cd /home/agent/workspace && timeout 60 ${cli} 2>&1 | tail -8`], { timeout: 75000 });
+    const out = (r.stdout + r.stderr);
+    if (/not logged in|please run.*login|unauthorized|\b401\b|invalid token|missing bearer|authentication|please run codex login/i.test(out)) {
+      return 'login_expired';
+    }
+    if (/\bok\b/i.test(out)) return 'connected';
+    return 'unknown: ' + out.trim().replace(/\s+/g, ' ').slice(-120);
   },
   async 'delete-agent'({ agentName }) {
     const name = safeName(agentName);

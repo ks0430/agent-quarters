@@ -108,6 +108,19 @@ router.post('/commands/:id/result', (req, res) => {
     logEvent(req.instance.id, ok ? 'login' : 'error',
       ok ? 'Logged in — subscription credentials installed' : `Login failed: ${output.slice(0, 150)}`);
   }
+  if (agent && cmd.type === 'health-check') {
+    const health = ok ? output.trim() : 'error';
+    db.prepare("UPDATE agents SET health = ?, health_at = datetime('now') WHERE id = ?").run(health, agent.id);
+    // Login expiry is worth reflecting in our login_state so the UI prompts re-login.
+    if (health === 'login_expired' && agent.auth_method === 'subscription') {
+      db.prepare("UPDATE agents SET login_state = 'needs_login' WHERE id = ?").run(agent.id);
+    }
+    logEvent(req.instance.id, health === 'connected' ? 'login' : 'error',
+      health === 'connected' ? 'Connection test: agent is logged in and responding ✓'
+      : health === 'login_expired' ? 'Connection test: login expired — re-login needed'
+      : health === 'stopped' ? 'Connection test: agent container is stopped'
+      : `Connection test: ${health.slice(0, 120)}`);
+  }
   res.json({ ok: true });
 });
 

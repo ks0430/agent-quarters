@@ -98,6 +98,8 @@ if (!agentCols.includes('login_url')) db.exec('ALTER TABLE agents ADD COLUMN log
 if (!agentCols.includes('login_code')) db.exec('ALTER TABLE agents ADD COLUMN login_code TEXT');
 if (!agentCols.includes('api_enabled')) db.exec('ALTER TABLE agents ADD COLUMN api_enabled INTEGER NOT NULL DEFAULT 0');
 if (!agentCols.includes('bridge_token')) db.exec('ALTER TABLE agents ADD COLUMN bridge_token TEXT');
+if (!agentCols.includes('health')) db.exec('ALTER TABLE agents ADD COLUMN health TEXT');
+if (!agentCols.includes('health_at')) db.exec('ALTER TABLE agents ADD COLUMN health_at TEXT');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS api_keys (

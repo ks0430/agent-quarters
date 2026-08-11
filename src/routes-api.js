@@ -180,7 +180,7 @@ router.get('/instances', requireUser, (req, res) => {
     "SELECT id, name, region, bundle, state, public_ip, static_ip, static_ip_name, paused_at, last_seen, error, created_at FROM instances WHERE user_id = ? AND state != 'deleted' ORDER BY id DESC"
   ).all(req.user.id);
   const agentsFor = db.prepare(
-    "SELECT id, name, agent_type, model, platform, status, auth_method, login_state, created_at FROM agents WHERE instance_id = ? AND status != 'deleted'"
+    "SELECT id, name, agent_type, model, platform, status, auth_method, login_state, api_enabled, health, health_at, created_at FROM agents WHERE instance_id = ? AND status != 'deleted'"
   );
   res.json(instances.map((i) => ({ ...i, agents: agentsFor.all(i.id) })));
 });
@@ -254,6 +254,16 @@ router.post('/agents/:id/restart', requireUser, (req, res) => {
   if (!agent) return;
   db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
     .run(agent.iid, 'restart-agent', JSON.stringify({ agentName: agent.name }));
+  res.json({ ok: true });
+});
+
+// Live connection test — probes the agent's real login status.
+router.post('/agents/:id/test', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  db.prepare("UPDATE agents SET health = 'checking' WHERE id = ?").run(agent.id);
+  db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')
+    .run(agent.iid, 'health-check', JSON.stringify({ agentName: agent.name, agentType: agent.agent_type }));
   res.json({ ok: true });
 });
 

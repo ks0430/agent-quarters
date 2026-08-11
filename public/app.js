@@ -91,6 +91,13 @@ function needsLogin(agent) {
   return agent && agent.auth_method === 'subscription' && agent.login_state !== 'logged_in';
 }
 
+function healthNote(agent) {
+  if (!agent || !agent.health || agent.health === 'checking') return '';
+  if (agent.health === 'connected') return ' · <span style="color:var(--green)">✓ connection ok</span>';
+  if (agent.health === 'login_expired') return ' · <span style="color:var(--red)">⚠ login expired</span>';
+  return '';
+}
+
 function statusPill(inst, agent) {
   const mk = (cls, label) => `<span class="pill ${cls}"><span class="dot"></span>${label}</span>`;
   if (inst.state === 'provisioning') return mk('busy', 'Creating server…');
@@ -152,7 +159,7 @@ async function refresh() {
         <div>
           <div class="agent-name">${agent ? agent.name : inst.name}</div>
           <div class="agent-meta">${typeLabel}${agent && agent.model ? ` (${agent.model})` : ''}${platform}
-            · ${regionLabel(inst.region)}${inst.static_ip ? ` · 📌 ${inst.static_ip}` : (inst.public_ip ? ` · ${inst.public_ip}` : '')}</div>
+            · ${regionLabel(inst.region)}${inst.static_ip ? ` · 📌 ${inst.static_ip}` : (inst.public_ip ? ` · ${inst.public_ip}` : '')}${healthNote(agent)}</div>
         </div>
         ${statusPill(inst, agent)}
       </div>
@@ -168,6 +175,7 @@ async function refresh() {
             data-model="${agent.model || ''}" data-type="${agent.agent_type}"
             data-auth="${agent.auth_method}" data-name="${agent.name}">${connectLabel}</button>
           <button class="btn" data-act="logs" data-id="${agent.id}" data-name="${agent.name}">Logs</button>
+          <button class="btn" data-act="test" data-id="${agent.id}">Test connection</button>
           <button class="btn" data-act="restart" data-id="${agent.id}">Restart</button>` : ''}
         <button class="btn" data-act="details" data-id="${inst.id}" data-name="${inst.name}">Details</button>
         ${agent && inst.state === 'ready' ? `
@@ -191,6 +199,29 @@ async function onAction(btn) {
       btn.disabled = true;
       await api('POST', `/agents/${id}/restart`);
       setTimeout(() => { btn.disabled = false; }, 3000);
+    } else if (act === 'test') {
+      btn.disabled = true; btn.textContent = 'Testing…';
+      await api('POST', `/agents/${id}/test`);
+      const started = Date.now();
+      const poll = setInterval(async () => {
+        let ag = null;
+        try {
+          const insts = await api('GET', '/instances');
+          insts.forEach((i) => i.agents.forEach((a) => { if (String(a.id) === id) ag = a; }));
+        } catch { /* transient */ }
+        if (ag && ag.health && ag.health !== 'checking') {
+          clearInterval(poll);
+          const m = ag.health === 'connected' ? '✅ Connected — the agent is logged in and responding.'
+            : ag.health === 'login_expired' ? '⚠️ Login expired. Open the agent and log in again (Login button).'
+            : ag.health === 'stopped' ? '⚠️ The agent container is stopped. Try Restart.'
+            : `Result: ${ag.health}`;
+          alert(m);
+          refresh();
+        } else if (Date.now() - started > 90000) {
+          clearInterval(poll); btn.disabled = false; btn.textContent = 'Test connection';
+          alert('Test timed out — the agent did not respond. It may be busy or offline.');
+        }
+      }, 3000);
     } else if (act === 'logs') {
       $('logs-title').textContent = `Logs — ${btn.dataset.name}`;
       $('logs-body').textContent = 'loading…';

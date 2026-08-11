@@ -14,10 +14,13 @@ import {
 } from './billing.js';
 import { logEvent, getEvents } from './events.js';
 import { enc, dec } from './secrets.js';
+import googleRoutes, { googleEnabled } from './oauth-google.js';
 import { getProvider, REGIONS } from './provider.js';
 import { buildUserData } from './bootstrap.js';
 
 const router = Router();
+router.use('/auth', googleRoutes); // /api/auth/google, /api/auth/google/callback
+
 const BUNDLE_ID = process.env.BUNDLE_ID || 'small_3_0';
 const MAX_INSTANCES = parseInt(process.env.MAX_INSTANCES_PER_USER || '3', 10);
 
@@ -41,7 +44,11 @@ router.post('/signup', (req, res) => {
 router.post('/login', (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user || !verifyPassword(String(req.body.password || ''), user.pass_hash)) {
+  // Accounts created via Google have no password set.
+  if (user && !user.pass_hash && user.google_id) {
+    return res.status(401).json({ error: 'this account uses Google — click "Continue with Google"' });
+  }
+  if (!user || !user.pass_hash || !verifyPassword(String(req.body.password || ''), user.pass_hash)) {
     return res.status(401).json({ error: 'wrong email or password' });
   }
   setSessionCookie(res, createSession(user.id));
@@ -61,7 +68,7 @@ router.get('/me', (req, res) => {
 // ---------- metadata ----------
 
 router.get('/meta', (_req, res) => {
-  res.json({ regions: REGIONS, bundle: BUNDLE_ID, maxInstances: MAX_INSTANCES });
+  res.json({ regions: REGIONS, bundle: BUNDLE_ID, maxInstances: MAX_INSTANCES, google: googleEnabled() });
 });
 
 // ---------- step 1: deploy a server (region only) ----------

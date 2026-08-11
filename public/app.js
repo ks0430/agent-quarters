@@ -722,6 +722,15 @@ $('l-close').onclick = () => { clearInterval(loginPollTimer); $('login-modal').c
 
 (async function boot() {
   meta = await api('GET', '/meta');
+  if (meta.google) {
+    $('google-btn').classList.remove('hidden');
+    $('or-divider').classList.remove('hidden');
+  }
+  const authErr = new URLSearchParams(location.search).get('auth_error');
+  if (authErr) {
+    $('auth-error').textContent = authErr;
+    history.replaceState({}, '', '/');
+  }
   fillModes($('s-mode'), 'claudecode');
   try {
     const me = await api('GET', '/me');

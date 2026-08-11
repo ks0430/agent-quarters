@@ -1,6 +1,12 @@
 [
   {
     "date": "2026-08-11",
+    "type": "feature",
+    "title": "Sign in with Google",
+    "detail": "Create an account or log in with one click using Google \u2014 no password to choose or remember. Existing email accounts link automatically when the Google email matches."
+  },
+  {
+    "date": "2026-08-11",
     "type": "improvement",
     "title": "Secrets encrypted at rest",
     "detail": "Your agent's API keys, environment variables and chat platform tokens are now encrypted in our database (AES-256-GCM), not stored as plain text."

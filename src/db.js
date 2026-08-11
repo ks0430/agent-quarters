@@ -73,6 +73,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_ref ON credit_ledger(ref) WHERE ref
 
 // Column migrations for databases created before these fields existed.
 const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+if (!userCols.includes('google_id')) db.exec('ALTER TABLE users ADD COLUMN google_id TEXT');
+if (!userCols.includes('display_name')) db.exec('ALTER TABLE users ADD COLUMN display_name TEXT');
 if (!userCols.includes('balance_cents')) db.exec('ALTER TABLE users ADD COLUMN balance_cents REAL NOT NULL DEFAULT 0');
 if (!userCols.includes('plan')) db.exec("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'");
 if (!userCols.includes('stripe_customer_id')) db.exec('ALTER TABLE users ADD COLUMN stripe_customer_id TEXT');

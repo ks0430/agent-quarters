@@ -109,6 +109,14 @@ summary { cursor: pointer; font-size: 13px; }
   border-radius: 14px; padding: 24px;
 }
 .auth-card { flex: 0 1 360px; }
+.google-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  text-decoration: none; background: #fff; color: #1f1f1f; border-color: #dadce0;
+  font-weight: 600; margin-top: 14px;
+}
+.google-btn:hover { filter: brightness(.96); }
+.or-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; margin: 16px 0 4px; }
+.or-divider::before, .or-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 .tabs { display: flex; gap: 8px; margin-bottom: 8px; }
 .tab {
   flex: 1; padding: 8px; background: transparent; color: var(--muted);

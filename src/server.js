@@ -10,6 +10,8 @@ import agentApiRoutes from './routes-agentapi.js';
 import { startBilling } from './billing.js';
 import { getProvider } from './provider.js';
 import { logEvent } from './events.js';
+import { migratePlaintext, encryptionEnabled } from './secrets.js';
+import { startBackups } from './backup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
@@ -133,9 +135,12 @@ async function pollInstances() {
 setInterval(pollInstances, 20000);
 if (!process.env.DISABLE_BILLING_CRON) startBilling();
 
+migratePlaintext(db);
+startBackups();
+
 const port = parseInt(process.env.PORT || '3000', 10);
 app.listen(port, () => {
-  console.log(`AgentDeploy control plane on :${port}`);
+  console.log(`AgentDeploy control plane on :${port} (secrets at rest: ${encryptionEnabled() ? 'encrypted' : 'PLAINTEXT'})`);
   if (process.env.MOCK_PROVIDER) console.log('MOCK_PROVIDER enabled — no real cloud calls');
   else if (!process.env.BASE_URL) console.warn('WARNING: BASE_URL not set; deploys will fail');
 });

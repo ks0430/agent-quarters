@@ -91,21 +91,40 @@ Trust policy: our account as principal + `sts:ExternalId` condition.
 Ship it as a CloudFormation template so it's one click, reviewable, and
 identical for every customer.
 
-## 4. Pricing shape
+## 4. Market check (researched 2026-08-13)
 
-They pay AWS directly (~$12/server/month), so our revenue is software-only.
-Options:
+**Who really does BYOC:** Databricks (canonical — classic compute in the
+customer's account, serverless in theirs), Confluent/WarpStream, ClickHouse
+Cloud (CloudFormation-installed `ClickHouseManagementRole`, requires a
+committed contract), Instaclustr, Northflank, Estuary, groundcover, and
+**E2B — the closest analogue to us** (agent sandboxes, BYOC on the
+enterprise tier).
 
-- **Per server, flat** — e.g. $10–15/server/month. Simple, scales with usage,
-  comparable to what they'd pay us in markup today.
-- **Per organisation** — e.g. $99–299/month for unlimited servers. Attractive
-  to companies with many agents; simpler procurement.
-- **Enterprise minimum** — most BYOC vendors gate this behind an annual
-  commitment because the support burden is real.
+**Correction on Supabase:** they do **not** have a formal BYOC product.
+What exists is (a) open-source self-hosting via Docker/Helm — unsupported,
+you run it — and (b) an **AWS Marketplace listing** so purchases draw down
+the customer's AWS spend commitment. That second point matters a lot (see
+§7). No BYOC either: MongoDB Atlas, Neon, Temporal Cloud, Airbyte.
 
-Note the economics flip: today ~34% margin on a marked-up server; in BYOC
-our cost per server is ~$0 (they pay AWS), so **almost all of the software
-fee is margin** — but we absorb more support cost.
+**Published pricing (rare — most route to sales):**
+
+| Vendor | BYOC pricing |
+|---|---|
+| WarpStream (best template) | Software fee only, infra excluded: $100 / $500 / $1,500 per month tiers + $0.01/GiB throughput; idle clusters free; no per-node fees |
+| ScaleGrid | Flat management fee **from $6/month** per database |
+| Northflank | **No premium** — same price to run in your VPC |
+| Databricks | ~$0.22/DBU in your account vs ~$0.70/DBU serverless in theirs |
+| ClickHouse / Estuary / E2B / Airbyte | Enterprise only, annual commitment |
+
+**Direction:** the *unit* software fee is usually flat or lower than hosted
+(you've unbundled the infra markup), but **total contract value is higher**
+because BYOC is gated behind an enterprise tier with a minimum commitment.
+
+**Our shape:** keep the per-hour software rate roughly equal to today's
+markup (~$6/server/month equivalent) so BYOC isn't a discount vector, plus
+a platform floor. Economics flip in our favour — infra cost becomes ~$0, so
+nearly all fee is margin — but support cost rises, which is exactly why
+everyone gates it.
 
 ## 5. Risks and honest downsides
 
@@ -118,13 +137,48 @@ fee is margin** — but we absorb more support cost.
 | **We can't clean up** — if they revoke the role, orphan servers keep billing *them* | Detect assume-role failure, mark the account degraded, warn loudly |
 | **Complexity for a tiny company** | Gate it: enterprise-only, no self-serve, and only build when a real customer asks |
 
-## 6. Recommendation
+## 6. The strongest warning from the field
 
-Build **Phase 1 + 2** only when there is a named customer waiting — which
-may be your own company. It is roughly **2–3 days** of work because the
-architecture already separates control plane from data plane. Don't
-self-serve it: keep BYOC an assisted, enterprise-tier motion.
+Jack Vanlightly's [BYOC critique](https://jack-vanlightly.com/blog/2024/9/11/byoc-not-the-future-of-cloud-services-but-a-pillar-of-an-everywhere-platform)
+is the sharpest: BYOC **destroys multi-tenant economics**. You inherit
+"hundreds or thousands of single-tenant deployments across a heterogeneous
+set of environments where the vendor has only partial control" — version
+drift, blind debugging, and a three-way support boundary between you, the
+customer and AWS. **Day one is easy; day two kills you.** An entire tooling
+market (Nuon raised $16.5M and serves only a few dozen BYOC vendors) exists
+because this is hard.
+
+Practical guardrails, drawn from what works:
+- **Zero-access posture** (Confluent/WarpStream's framing): minimise the IAM
+  scope, no impersonation by default, just-in-time access for debugging.
+- **Force auto-upgrade in the contract** — our host-agent self-update
+  already delivers this technically.
+- **Build remote diagnostics BEFORE selling.** We lose SSH-level debugging;
+  log shipping and a downloadable diagnostics bundle are prerequisites, not
+  nice-to-haves.
+
+## 7. Consider first: AWS Marketplace (cheaper win)
+
+If the customer's real driver is **"we must burn our committed AWS spend"**
+— which is common — selling through **AWS Marketplace** achieves that with
+none of the BYOC operational burden: their purchase draws down their EDP
+commitment while the servers stay in *our* account. This is exactly what
+Supabase does instead of BYOC.
+
+**Ask the customer which they actually need:**
+- "Spend commitment / procurement" → **AWS Marketplace listing** (days of
+  paperwork, no engineering)
+- "Data/servers must live in our VPC, security policy" → **real BYOC**
+
+## 8. Recommendation
+
+1. **First**, qualify the motivation — Marketplace may solve it.
+2. **If genuinely BYOC**, build Phase 1 + 2 (~2–3 days) *only with a named
+   customer waiting*, which may be your own company.
+3. **Gate it**: enterprise-only, assisted onboarding, annual commitment with
+   a meaningful floor. Never self-serve.
+4. **Prerequisite**: remote diagnostics/log shipping shipped first.
 
 The strategic upside beyond revenue: BYOC removes the "your servers hold our
-code and credentials" objection, which is the single biggest blocker to
-selling this into companies.
+code and credentials" objection — the single biggest blocker to selling this
+into companies.

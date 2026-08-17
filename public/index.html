@@ -170,6 +170,10 @@
         <label>App token (xapp-) <input id="e-sl-app"></label>
         <label>Allowed user IDs <input id="e-sl-allow" placeholder="*"></label>
       </div>
+      <label>Admin user IDs <span class="opt">(for /restart, /shell, /upgrade)</span>
+        <input id="e-admin" placeholder="e.g. U0123ABCD — leave empty to block these commands">
+        <small>Send <code>/whoami</code> to your bot to find your ID. Anyone listed gets shell access to the server.</small>
+      </label>
     </fieldset>
 
     <div class="err" id="edit-error"></div>

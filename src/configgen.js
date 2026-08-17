@@ -39,7 +39,14 @@ path = "/bridge/ws"
 
   out += `
 [[projects]]
-name = ${tomlStr(name)}
+name = ${tomlStr(name)}`;
+
+  // Privileged commands (/restart, /shell, /upgrade, /dir, /cron addexec) are
+  // blocked for everyone unless admin_from lists them. Must live at the
+  // [[projects]] level — cc-connect ignores it under platform options.
+  if (agent.adminFrom) out += `\nadmin_from = ${tomlStr(agent.adminFrom)}`;
+
+  out += `
 
 [projects.agent]
 type = ${tomlStr(agentType)}

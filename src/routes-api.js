@@ -188,7 +188,7 @@ router.get('/instances', requireUser, (req, res) => {
     "SELECT id, name, region, bundle, state, public_ip, static_ip, static_ip_name, paused_at, last_seen, error, created_at FROM instances WHERE user_id = ? AND state != 'deleted' ORDER BY id DESC"
   ).all(req.user.id);
   const agentsFor = db.prepare(
-    "SELECT id, name, agent_type, model, platform, status, auth_method, login_state, api_enabled, health, health_at, created_at FROM agents WHERE instance_id = ? AND status != 'deleted'"
+    "SELECT id, name, agent_type, model, platform, status, auth_method, login_state, api_enabled, health, health_at, admin_from, created_at FROM agents WHERE instance_id = ? AND status != 'deleted'"
   );
   res.json(instances.map((i) => ({ ...i, agents: agentsFor.all(i.id) })));
 });
@@ -209,14 +209,17 @@ router.post('/agents/:id/config', requireUser, (req, res) => {
     apiKey: String(req.body.apiKey || '').trim() || existingKey,
     platform: req.body.platform || agent.platform,
     platformConfig: req.body.platformConfig || {},
+    adminFrom: req.body.adminFrom !== undefined
+      ? String(req.body.adminFrom).replace(/[^A-Za-z0-9_,*-]/g, '').slice(0, 300)
+      : (agent.admin_from || ''),
   };
   const errors = validateAgentSpec(spec);
   if (errors.length) return res.status(400).json({ error: errors.join('; ') });
 
   const configToml = generateConfig(spec);
   const authEnv = generateEnv(spec);
-  db.prepare('UPDATE agents SET agent_type = ?, model = ?, platform = ?, config_toml = ?, env_json = ? WHERE id = ?')
-    .run(spec.agentType, spec.model, spec.platform, enc(configToml), enc(JSON.stringify(authEnv)), agent.id);
+  db.prepare('UPDATE agents SET agent_type = ?, model = ?, platform = ?, config_toml = ?, env_json = ?, admin_from = ? WHERE id = ?')
+    .run(spec.agentType, spec.model, spec.platform, enc(configToml), enc(JSON.stringify(authEnv)), spec.adminFrom || null, agent.id);
   // Keep the user's own env vars across config changes.
   const env = { ...authEnv, ...userEnvOf(agent) };
   db.prepare('INSERT INTO commands (instance_id, type, payload) VALUES (?, ?, ?)')

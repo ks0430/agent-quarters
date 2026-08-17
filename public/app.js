@@ -328,6 +328,7 @@ const SLACK_COMMANDS = [
   ['/commands', 'Manage custom slash commands', '[add|del]'],
   ['/config', 'View or update runtime configuration', '[get|set|reload]'],
   ['/bind', 'Manage bot-to-bot relay bindings', '[project|remove]'],
+  ['/whoami', 'Show your user ID (for allow/admin lists)', ''],
 ];
 
 function updateSlackManifestLink() {
@@ -472,6 +473,7 @@ function openEdit(data) {
   $('e-apikey').value = '';
   // Subscription agents have no API key to edit — hide the field entirely.
   $('e-apikey').closest('label').classList.toggle('hidden', data.auth === 'subscription');
+  $('e-admin').value = data.admin || '';
   $('e-sl-name').value = data.name || '';
   updateSlackManifestLink();
   $('e-platform').value = data.platform === 'none' ? 'telegram' : data.platform;
@@ -488,6 +490,7 @@ $('edit-form').onsubmit = async (e) => {
       model: $('e-model').value.trim() || null,
       mode: $('e-mode').value,
       apiKey: $('e-apikey').value.trim(),
+      adminFrom: $('e-admin').value.trim(),
       ...platformConfigFrom('e'),
     });
     $('edit-modal').close();

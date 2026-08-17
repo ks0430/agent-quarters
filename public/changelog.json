@@ -2,6 +2,12 @@
   {
     "date": "2026-08-17",
     "type": "fix",
+    "title": "Admin commands now work",
+    "detail": "Privileged commands (/restart, /shell, /upgrade) were blocked for everyone. Add your chat user ID under \"Admin user IDs\" in agent settings to authorize them. Also added /whoami so you can look up your ID."
+  },
+  {
+    "date": "2026-08-17",
+    "type": "fix",
     "title": "More Slack commands available",
     "detail": "/restart, /doctor, /version, /upgrade, /provider, /allow, /alias, /commands, /config and /bind are now registered when you create a Slack app \u2014 previously they were missing and Slack reported them as unknown."
   },

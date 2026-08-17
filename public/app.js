@@ -305,8 +305,10 @@ const SLACK_COMMANDS = [
   ['/mode', 'View or switch permission mode', '[default|edit|plan|yolo]'],
   ['/stop', 'Stop current execution', ''],
   ['/compress', 'Compress conversation context', ''],
-  // note: /status and /help are Slack built-ins — registering them makes
-  // manifest validation fail with "slash command has invalid name"
+  // Slack allows up to 50 commands, but built-in names are rejected (the
+  // manifest fails with a vague "slash command has invalid name"). Known
+  // collisions we must NOT register: /status, /help, /search, /remind,
+  // /topic, /invite, /me, /away, /dm, /msg, /mute, /star, /who.
   ['/quiet', 'Toggle thinking and tool progress display', ''],
   ['/usage', 'Show account and model quota usage', ''],
   ['/shell', 'Run a shell command and return the output', '<command>'],
@@ -316,6 +318,16 @@ const SLACK_COMMANDS = [
   ['/skills', 'List agent skills', ''],
   ['/reasoning', 'View or switch reasoning effort', '[low|medium|high]'],
   ['/workspace', 'Manage workspaces', '[list|switch|add]'],
+  ['/restart', 'Restart the agent service', ''],
+  ['/doctor', 'Run system diagnostics', ''],
+  ['/version', 'Show cc-connect version', ''],
+  ['/upgrade', 'Check for updates and self-update', ''],
+  ['/provider', 'Manage API providers', '[list|add|remove|switch]'],
+  ['/allow', 'Pre-allow a tool for the next session', '<tool>'],
+  ['/alias', 'Manage command aliases', '[add|del]'],
+  ['/commands', 'Manage custom slash commands', '[add|del]'],
+  ['/config', 'View or update runtime configuration', '[get|set|reload]'],
+  ['/bind', 'Manage bot-to-bot relay bindings', '[project|remove]'],
 ];
 
 function updateSlackManifestLink() {

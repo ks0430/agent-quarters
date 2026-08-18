@@ -117,6 +117,26 @@ export function generateEnv(agent) {
   return env;
 }
 
+// Read back the settings we generated. mode and the chat-platform tokens
+// live only inside config.toml (no DB columns), so the settings screen and
+// the "leave blank to keep current" merge both read them from here.
+export function parseConfig(toml) {
+  const text = String(toml || '');
+  const one = (re) => (text.match(re) || [])[1] || '';
+  return {
+    mode: one(/^mode = "([^"]*)"/m),
+    model: one(/^model = "([^"]*)"/m),
+    adminFrom: one(/^admin_from = "([^"]*)"/m),
+    platformType: one(/^type = "(telegram|slack)"/m),
+    platformConfig: {
+      token: one(/^token = "([^"]*)"/m),          // telegram
+      botToken: one(/^bot_token = "([^"]*)"/m),   // slack
+      appToken: one(/^app_token = "([^"]*)"/m),
+      allowFrom: one(/^allow_from = "([^"]*)"/m),
+    },
+  };
+}
+
 export function validateAgentSpec(spec) {
   const errors = [];
   if (!/^[a-z0-9][a-z0-9-]{1,30}$/.test(spec.name || ''))

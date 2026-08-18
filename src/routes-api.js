@@ -7,7 +7,7 @@ import {
   hashPassword, verifyPassword, createSession, destroySession,
   setSessionCookie, clearSessionCookie, requireUser,
 } from './auth.js';
-import { generateConfig, generateEnv, validateAgentSpec } from './configgen.js';
+import { generateConfig, generateEnv, validateAgentSpec, parseConfig } from './configgen.js';
 import { instanceUsage } from './usage.js';
 import {
   chargeInstance, teardownInstance, MIN_DEPLOY_BALANCE_CENTS, RATE_CENTS_HOUR,
@@ -194,21 +194,58 @@ router.get('/instances', requireUser, (req, res) => {
 });
 
 // Update agent config (add/change platform, model, mode; blank apiKey keeps existing).
+// Current settings for the edit screen. Secrets are never returned — the UI
+// shows "unchanged" placeholders and the save merges blanks server-side.
+router.get('/agents/:id/settings', requireUser, (req, res) => {
+  const agent = ownedAgent(req, res);
+  if (!agent) return;
+  const cur = parseConfig(dec(agent.config_toml));
+  const pc = cur.platformConfig;
+  res.json({
+    model: agent.model || cur.model || '',
+    mode: cur.mode || '',
+    platform: agent.platform,
+    adminFrom: agent.admin_from || cur.adminFrom || '',
+    authMethod: agent.auth_method,
+    agentType: agent.agent_type,
+    name: agent.name,
+    apiEnabled: !!agent.api_enabled,
+    platformConfig: {
+      allowFrom: pc.allowFrom || '',
+      hasToken: !!pc.token && !pc.token.startsWith('0000:'),
+      hasBotToken: !!pc.botToken,
+      hasAppToken: !!pc.appToken,
+    },
+  });
+});
+
 router.post('/agents/:id/config', requireUser, (req, res) => {
   const agent = ownedAgent(req, res);
   if (!agent) return;
 
   const existingEnv = JSON.parse(dec(agent.env_json));
+  const current = parseConfig(dec(agent.config_toml));
+  // Blank token fields mean "keep what's already there" — otherwise reopening
+  // settings to change one thing would wipe the platform credentials.
+  const incoming = req.body.platformConfig || {};
+  const keepIfBlank = (val, prev) => (String(val || '').trim() || prev || '');
+  const mergedPlatformConfig = {
+    token: keepIfBlank(incoming.token, current.platformConfig.token),
+    botToken: keepIfBlank(incoming.botToken, current.platformConfig.botToken),
+    appToken: keepIfBlank(incoming.appToken, current.platformConfig.appToken),
+    allowFrom: incoming.allowFrom !== undefined
+      ? String(incoming.allowFrom).trim() : (current.platformConfig.allowFrom || ''),
+  };
   const existingKey = existingEnv.ANTHROPIC_API_KEY || existingEnv.OPENAI_API_KEY || '';
   const spec = {
     name: agent.name,
     agentType: req.body.agentType || agent.agent_type,
     authMethod: agent.auth_method, // fixed at setup; login state must survive edits
     model: req.body.model !== undefined ? (req.body.model || null) : agent.model,
-    mode: req.body.mode,
     apiKey: String(req.body.apiKey || '').trim() || existingKey,
     platform: req.body.platform || agent.platform,
-    platformConfig: req.body.platformConfig || {},
+    platformConfig: mergedPlatformConfig,
+    mode: req.body.mode || current.mode || undefined,
     adminFrom: req.body.adminFrom !== undefined
       ? String(req.body.adminFrom).replace(/[^A-Za-z0-9_,*-]/g, '').slice(0, 300)
       : (agent.admin_from || ''),

@@ -274,7 +274,8 @@ async function onAction(btn) {
 // ---------- deploy modal ----------
 
 function fillModes(select, type, current) {
-  select.innerHTML = MODES[type].map(([v, l]) =>
+  const list = MODES[type] || MODES.claudecode;
+  select.innerHTML = list.map(([v, l]) =>
     `<option value="${v}"${v === current ? ' selected' : ''}>${l}</option>`).join('');
 }
 
@@ -465,22 +466,41 @@ $('setup-form').onsubmit = async (e) => {
 
 // ---------- edit modal ----------
 
-function openEdit(data) {
+async function openEdit(data) {
   $('e-agent-id').value = data.id;
   $('edit-title').textContent = data.platform === 'none' ? 'Connect a chat platform' : 'Agent settings';
-  $('e-model').value = data.model || '';
-  fillModes($('e-mode'), data.type);
-  $('e-apikey').value = '';
-  // Subscription agents have no API key to edit — hide the field entirely.
-  $('e-apikey').closest('label').classList.toggle('hidden', data.auth === 'subscription');
-  $('e-admin').value = data.admin || '';
-  $('e-sl-name').value = data.name || '';
-  updateSlackManifestLink();
-  $('e-platform').value = data.platform === 'none' ? 'telegram' : data.platform;
-  $('e-platform').onchange();
   $('edit-error').textContent = '';
+  $('e-apikey').value = '';
+  $('e-apikey').closest('label').classList.toggle('hidden', data.auth === 'subscription');
   $('edit-modal').showModal();
+
+  // Load what's actually saved so the form reflects reality. Secrets are not
+  // returned by the API — their fields stay blank and mean "keep current".
+  let cur = {};
+  try { cur = await api('GET', `/agents/${data.id}/settings`); }
+  catch (e) { $('edit-error').textContent = e.message; }
+
+  $('e-model').value = cur.model || '';
+  fillModes($('e-mode'), cur.agentType || data.type, cur.mode);
+  $('e-admin').value = cur.adminFrom || '';
+  $('e-sl-name').value = cur.name || data.name || '';
+  $('e-platform').value = (cur.platform && cur.platform !== 'none') ? cur.platform : 'telegram';
+  $('e-platform').onchange();
+  updateSlackManifestLink();
+
+  const pc = cur.platformConfig || {};
+  const mark = (el, saved) => {
+    el.value = '';
+    el.placeholder = saved ? '•••••• saved — leave blank to keep' : '';
+    el.classList.toggle('has-saved', !!saved);
+  };
+  mark($('e-tg-token'), pc.hasToken);
+  mark($('e-sl-bot'), pc.hasBotToken);
+  mark($('e-sl-app'), pc.hasAppToken);
+  $('e-tg-allow').value = pc.allowFrom || '';
+  $('e-sl-allow').value = pc.allowFrom || '';
 }
+
 $('edit-cancel').onclick = () => $('edit-modal').close();
 
 $('edit-form').onsubmit = async (e) => {

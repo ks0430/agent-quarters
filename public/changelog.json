@@ -1,5 +1,11 @@
 [
   {
+    "date": "2026-08-18",
+    "type": "fix",
+    "title": "Agent settings remember what you saved",
+    "detail": "Reopening settings now shows your current permission mode, allowed users, admin IDs and model instead of blank fields. Token fields show \"saved\" and can be left blank to keep the existing value \u2014 changing one setting no longer wipes your Slack or Telegram credentials."
+  },
+  {
     "date": "2026-08-17",
     "type": "fix",
     "title": "Admin commands now work",
